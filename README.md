@@ -155,6 +155,7 @@ carteiraconsol/
 │   ├── schemas/            # Schemas Pydantic
 │   ├── services/           # Regras de aplicação e integração
 │   └── utils/              # Utilitários auxiliares
+├── alembic/                # Migrações versionadas do banco
 ├── data/
 │   ├── processed/          # Saídas processadas do ETL
 │   ├── raw/                # Arquivos brutos recebidos/localizados
@@ -220,7 +221,7 @@ API_PREFIX=
 
 `AUTO_CREATE_TABLES` existe como conveniência para desenvolvimento local. Em ambientes compartilhados ou de produção, prefira deixá-lo como `false` e aplicar mudanças de schema via migrações explícitas e revisadas.
 
-Hoje o projeto ainda não inclui Alembic versionado. Isso significa que a evolução de schema em produção não deve depender de `create_all()`: a recomendação é introduzir migrações controladas antes de qualquer rollout produtivo.
+O repositório agora inclui uma baseline Alembic para versionar o schema com segurança. Em produção, a evolução da base não deve depender de `create_all()`: use migrações revisadas e aplique-as com `alembic upgrade head`.
 
 ### 4. Instalar Dependências do Backend
 
@@ -241,6 +242,32 @@ Se o banco `etl_db` ainda não existir:
 python scripts/ensure_postgres_db.py
 python scripts/init_db.py
 ```
+
+### 5.1. Aplicar migrações com Alembic
+
+Para aplicar a baseline atual e futuras mudanças de schema:
+
+```powershell
+alembic upgrade head
+```
+
+Para criar uma nova revisão a partir dos modelos atuais:
+
+```powershell
+alembic revision --autogenerate -m "describe schema change"
+```
+
+Para consultar o estado das migrações:
+
+```powershell
+alembic current
+alembic history
+```
+
+Uso recomendado:
+
+- desenvolvimento local rápido: `AUTO_CREATE_TABLES=true` continua disponível
+- ambientes compartilhados ou produção: `AUTO_CREATE_TABLES=false` e `alembic upgrade head`
 
 ### 6. Rodar o Backend
 
