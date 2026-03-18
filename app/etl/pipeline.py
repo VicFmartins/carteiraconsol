@@ -62,6 +62,9 @@ class PortfolioETLPipeline:
             detection_confidence = dataframe.attrs.get("detection_confidence")
             review_required = bool(dataframe.attrs.get("review_required", False))
             review_reasons = tuple(review_decision.get("reasons", ()))
+            detected_columns = tuple(str(column) for column in dataframe.attrs.get("detected_columns", tuple(dataframe.columns)))
+            applied_mappings = tuple(dict(item) for item in dataframe.attrs.get("column_mapping", ()))
+            structure_detection = dataframe.attrs.get("structure_detection")
             transformed = normalize_portfolio_frame(dataframe)
             classified = apply_asset_classification(transformed)
             enriched = enrich_assets(classified)
@@ -87,6 +90,10 @@ class PortfolioETLPipeline:
                 detection_confidence=detection_confidence,
                 review_required=review_required,
                 review_reasons=review_reasons,
+                parser_name=parser_name,
+                detected_columns=detected_columns,
+                applied_mappings=applied_mappings,
+                structure_detection=dict(structure_detection) if isinstance(structure_detection, dict) else None,
                 **load_stats,
             )
         except ApplicationError:

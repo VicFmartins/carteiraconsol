@@ -394,6 +394,8 @@ GET /clients
 GET /accounts
 GET /assets
 GET /positions
+GET /ingestion-reports
+GET /ingestion-reports/{id}
 ```
 
 ### Filtros e Paginação

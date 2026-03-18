@@ -36,6 +36,7 @@ class ETLRunFromS3Request(BaseModel):
 
 
 class ETLFileResult(BaseModel):
+    ingestion_report_id: int | None = None
     source_file: str
     raw_file: str
     processed_file: str
@@ -59,6 +60,7 @@ class ETLRunResponse(BaseModel):
 
 
 class UploadResponse(BaseModel):
+    ingestion_report_id: int | None = None
     filename: str
     detected_type: str
     rows_processed: int = Field(ge=0)

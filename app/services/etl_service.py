@@ -11,11 +11,12 @@ from uuid import uuid4
 from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
-from app.core.exceptions import ETLInputError, ResourceNotFoundError
+from app.core.exceptions import ApplicationError, ETLInputError, ResourceNotFoundError
 from app.db.session import session_scope
 from app.etl.extract.file_reader import discover_input_files
 from app.etl.pipeline import PortfolioETLPipeline
 from app.schemas.etl import ETLFileResult, ETLRunResponse, UploadResponse
+from app.services.ingestion_report_service import IngestionReportService, detect_ingestion_type
 
 
 logger = logging.getLogger(__name__)
@@ -26,19 +27,43 @@ class ETLService:
         self.db = db
         self.settings = get_settings()
         self.pipeline = PortfolioETLPipeline(db)
+        self.ingestion_reports = IngestionReportService(db)
 
     def run(self, source_path: str | None = None, *, source_type: str = "local") -> ETLRunResponse:
         files = self._resolve_local_files(source_path)
-        summaries = [self.pipeline.run(file_path, source_type=source_type) for file_path in files]
-        return self._build_response(summaries)
+        results = [
+            self._run_with_report(
+                source_type=source_type,
+                source_path=file_path,
+                filename=file_path.name,
+                detected_type=detect_ingestion_type(file_path),
+            )
+            for file_path in files
+        ]
+        return self._build_response(results)
 
     def run_from_s3(self, *, s3_key: str | None = None, s3_prefix: str | None = None) -> ETLRunResponse:
-        summary = self.pipeline.run(source_type="s3", s3_key=s3_key, s3_prefix=s3_prefix)
-        return self._build_response([summary])
+        source_reference = s3_key or s3_prefix or "s3"
+        result = self._run_with_report(
+            source_type="s3",
+            s3_key=s3_key,
+            s3_prefix=s3_prefix,
+            filename=Path(source_reference).name or "s3_ingestion",
+            detected_type=detect_ingestion_type(source_reference),
+        )
+        return self._build_response([result])
 
     def run_many_from_s3(self, s3_keys: Iterable[str]) -> ETLRunResponse:
-        summaries = [self.pipeline.run(source_type="s3", s3_key=s3_key) for s3_key in s3_keys]
-        return self._build_response(summaries)
+        results = [
+            self._run_with_report(
+                source_type="s3",
+                s3_key=s3_key,
+                filename=Path(s3_key).name or "s3_ingestion",
+                detected_type=detect_ingestion_type(s3_key),
+            )
+            for s3_key in s3_keys
+        ]
+        return self._build_response(results)
 
     def save_uploaded_file(self, filename: str, file_stream: BinaryIO) -> Path:
         cleaned_name = Path(filename or "").name
@@ -70,14 +95,22 @@ class ETLService:
             supported = ", ".join(self.settings.supported_extensions)
             raise ETLInputError(f"Unsupported uploaded file type '{suffix}'. Supported types: {supported}.")
 
-        summary = self.pipeline.run(path, source_type="local")
         filename = original_filename or path.name
-        return UploadResponse(
+        detected_type = self._detect_uploaded_type(path)
+        summary, report = self._run_with_report(
+            source_type="local",
+            source_path=path,
             filename=filename,
-            detected_type=self._detect_uploaded_type(path),
+            detected_type=detected_type,
+        )
+        message = f"Arquivo {filename} processado com sucesso."
+        return UploadResponse(
+            ingestion_report_id=report.id,
+            filename=filename,
+            detected_type=detected_type,
             rows_processed=summary.rows_processed,
             rows_skipped=summary.rows_skipped,
-            message=f"Arquivo {filename} processado com sucesso.",
+            message=message,
             processed_at=datetime.now(UTC).isoformat(),
             raw_file=str(summary.raw_file),
             processed_file=str(summary.processed_file),
@@ -97,9 +130,10 @@ class ETLService:
                 temp_path.unlink(missing_ok=True)
                 logger.info("Removed temporary uploaded file %s", temp_path)
 
-    def _build_response(self, summaries) -> ETLRunResponse:
+    def _build_response(self, results: list[tuple]) -> ETLRunResponse:
         results = [
             ETLFileResult(
+                ingestion_report_id=report.id,
                 source_file=summary.source_file,
                 raw_file=str(summary.raw_file),
                 processed_file=str(summary.processed_file),
@@ -113,7 +147,7 @@ class ETLService:
                 review_required=summary.review_required,
                 review_reasons=list(summary.review_reasons),
             )
-            for summary in summaries
+            for summary, report in results
         ]
 
         return ETLRunResponse(
@@ -122,6 +156,53 @@ class ETLService:
             total_rows_skipped=sum(item.rows_skipped for item in results),
             results=results,
         )
+
+    def _run_with_report(
+        self,
+        *,
+        source_type: str,
+        filename: str,
+        detected_type: str,
+        source_path: Path | None = None,
+        s3_key: str | None = None,
+        s3_prefix: str | None = None,
+    ) -> tuple:
+        source_reference = str(source_path) if source_path is not None else (s3_key or s3_prefix or filename)
+        try:
+            summary = self.pipeline.run(
+                source_path,
+                source_type=source_type,
+                s3_key=s3_key,
+                s3_prefix=s3_prefix,
+            )
+            message = f"Arquivo {filename} processado com sucesso."
+            resolved_detected_type = detect_ingestion_type(summary.source_file)
+            report = self.ingestion_reports.create_success_report(
+                summary=summary,
+                filename=filename,
+                source_type=source_type,
+                detected_type=resolved_detected_type,
+                message=message,
+            )
+            return summary, report
+        except ApplicationError as exc:
+            self.ingestion_reports.create_failure_report(
+                filename=filename,
+                source_file=source_reference,
+                source_type=source_type,
+                detected_type=detected_type,
+                message=exc.message,
+            )
+            raise
+        except Exception as exc:
+            self.ingestion_reports.create_failure_report(
+                filename=filename,
+                source_file=source_reference,
+                source_type=source_type,
+                detected_type=detected_type,
+                message=str(exc) or "Unexpected ingestion failure.",
+            )
+            raise
 
     def _resolve_local_files(self, source_path: str | None) -> list[Path]:
         if source_path:

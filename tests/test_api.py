@@ -18,6 +18,7 @@ from app.main import create_app
 from app.models.account import Account
 from app.models.asset_master import AssetMaster
 from app.models.client import Client
+from app.models.ingestion_report import IngestionReport
 from app.models.position_history import PositionHistory
 from app.api.routes import upload as upload_route_module
 from app.schemas.etl import UploadResponse
@@ -159,12 +160,20 @@ def test_upload_endpoint_processes_a_supported_file(api_client: TestClient) -> N
     assert payload["data"]["filename"] == "carteira.csv"
     assert payload["data"]["detected_type"] == "csv"
     assert payload["data"]["rows_processed"] == 1
+    assert payload["data"]["ingestion_report_id"] is not None
     assert payload["data"]["processed_at"]
     datetime.fromisoformat(payload["data"]["processed_at"])
 
     positions_response = api_client.get("/positions")
     assert positions_response.status_code == 200
     assert positions_response.json()["pagination"]["total"] == 3
+
+    reports_response = api_client.get("/ingestion-reports")
+    reports_payload = reports_response.json()
+    assert reports_response.status_code == 200
+    assert reports_payload["pagination"]["total"] == 1
+    assert reports_payload["data"][0]["id"] == payload["data"]["ingestion_report_id"]
+    assert reports_payload["data"][0]["status"] == "success"
 
     Path(payload["data"]["raw_file"]).unlink(missing_ok=True)
     Path(payload["data"]["processed_file"]).unlink(missing_ok=True)
@@ -231,3 +240,56 @@ def test_upload_endpoint_rejects_payloads_larger_than_limit(
     payload = response.json()
     assert payload["status"] == "error"
     assert payload["error_code"] == "upload_too_large"
+
+
+def test_upload_persists_review_required_ingestion_report(api_client: TestClient) -> None:
+    csv_content = "\n".join(
+        [
+            "cliente,corretora,ativo,quantidade",
+            "Carlos Lima,XP,Tesouro Selic 2029,2",
+        ]
+    ).encode("utf-8")
+
+    response = api_client.post(
+        "/upload",
+        files={"file": ("carteira_incompleta.csv", csv_content, "text/csv")},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()["data"]
+    assert payload["review_required"] is True
+    assert any("reference_date" in reason for reason in payload["review_reasons"])
+
+    reports_response = api_client.get("/ingestion-reports", params={"review_required": "true"})
+    reports_payload = reports_response.json()
+    assert reports_response.status_code == 200
+    assert reports_payload["pagination"]["total"] == 1
+    report = reports_payload["data"][0]
+    assert report["id"] == payload["ingestion_report_id"]
+    assert report["review_required"] is True
+    assert report["status"] == "success"
+    assert "cliente" in [column.lower() for column in report["detected_columns"]]
+
+
+def test_get_ingestion_report_returns_report_details(api_client: TestClient) -> None:
+    csv_content = "\n".join(
+        [
+            "cliente,corretora,ativo,quantidade,data referencia",
+            "Carlos Lima,XP,Tesouro Selic 2029,2,2026-03-17",
+        ]
+    ).encode("utf-8")
+
+    upload_response = api_client.post(
+        "/upload",
+        files={"file": ("carteira_detalhe.csv", csv_content, "text/csv")},
+    )
+    report_id = upload_response.json()["data"]["ingestion_report_id"]
+
+    response = api_client.get(f"/ingestion-reports/{report_id}")
+
+    assert response.status_code == 200
+    payload = response.json()["data"]
+    assert payload["id"] == report_id
+    assert payload["filename"] == "carteira_detalhe.csv"
+    assert payload["status"] == "success"
+    assert payload["parser_name"] in {"smart_tabular_reader", "generic_csv_reader"}

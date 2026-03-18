@@ -58,12 +58,14 @@ class FileReader:
         suffix = file_path.suffix.lower()
         try:
             detection_result = self.structure_detector.read(file_path)
+            original_columns = list(detection_result.dataframe.columns)
             dataframe = detection_result.dataframe
             mapping_results = self.column_mapper.map_columns(list(dataframe.columns))
             renamed_columns = self.column_mapper.apply_mapping(list(dataframe.columns), mapping_results)
             dataframe = dataframe.rename(columns=renamed_columns)
             review_decision = evaluate_review_decision(mapping_results)
             dataframe.attrs["parser_name"] = "smart_tabular_reader"
+            dataframe.attrs["detected_columns"] = original_columns
             dataframe.attrs["structure_detection"] = detection_result.detection.as_dict()
             dataframe.attrs["column_mapping"] = [result.as_dict() for result in mapping_results]
             dataframe.attrs["review_decision"] = review_decision.as_dict()
@@ -86,6 +88,7 @@ class FileReader:
         if suffix in {".xlsx", ".xls"}:
             dataframe = pd.read_excel(file_path, dtype=str)
             dataframe.attrs["parser_name"] = "generic_excel_reader"
+            dataframe.attrs["detected_columns"] = list(dataframe.columns)
             return dataframe
         raise ETLInputError(f"Unsupported input file type: {suffix}")
 
@@ -122,6 +125,7 @@ class FileReader:
                     "auto" if separator is None else separator,
                 )
                 dataframe.attrs["parser_name"] = "generic_csv_reader"
+                dataframe.attrs["detected_columns"] = list(dataframe.columns)
                 return dataframe
             except ParserError:
                 continue
