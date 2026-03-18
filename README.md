@@ -316,6 +316,59 @@ Metabase:
 http://localhost:3001
 ```
 
+### 9. Rodar o stack local cloud-like com Docker Compose
+
+O repositório inclui uma stack local para validar um fluxo próximo do alvo em nuvem:
+
+- FastAPI em container
+- PostgreSQL em container
+- MinIO como storage S3-compatible
+- bootstrap automático do bucket
+
+Arquivos principais:
+
+- `Dockerfile`
+- `docker-compose.yml`
+- `.env.docker`
+
+Subir a stack:
+
+```powershell
+docker compose --env-file .env.docker up --build -d
+```
+
+Ver serviços:
+
+```powershell
+docker compose --env-file .env.docker ps
+docker compose --env-file .env.docker logs api
+docker compose --env-file .env.docker logs minio-init
+```
+
+Parar e remover volumes:
+
+```powershell
+docker compose --env-file .env.docker down -v
+```
+
+Endpoints úteis:
+
+- API: `http://127.0.0.1:8010`
+- Swagger: `http://127.0.0.1:8010/docs`
+- MinIO API: `http://127.0.0.1:9000`
+- MinIO Console: `http://127.0.0.1:9001`
+
+Nesse modo, use `RAW_STORAGE_MODE=s3` com `S3_ENDPOINT_URL=http://minio:9000` e `S3_USE_PATH_STYLE=true`, como já configurado em `.env.docker`.
+
+`API_PORT` foi separado no `.env.docker` para evitar conflito com um backend local rodando em `8000`.
+
+Fluxo validado localmente com essa stack:
+
+- upload via `POST /upload` no host
+- arquivo bruto persistido no bucket MinIO
+- ETL persistindo clientes, contas, ativos e posições no PostgreSQL
+- endpoints `/clients`, `/assets` e `/positions` respondendo com os dados processados
+
 ## 🔌 Uso da API
 
 ### Endpoints Principais

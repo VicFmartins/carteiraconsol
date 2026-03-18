@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 
 from app.services.storage_service import RawFileStorageService, S3ObjectInfo
 
@@ -99,3 +100,35 @@ def test_s3_list_files_returns_latest_first(monkeypatch) -> None:
     files = S3StorageService().list_files()
 
     assert [item.key for item in files] == ["incoming/latest.csv", "incoming/older.csv"]
+
+
+def test_raw_storage_in_s3_mode_returns_s3_uri_and_local_processing_path(monkeypatch, tmp_path) -> None:
+    source_file = tmp_path / "portfolio.csv"
+    source_file.write_text("cliente,ativo\nAna,PETR4\n", encoding="utf-8")
+
+    uploaded: list[tuple[Path, str | None]] = []
+
+    class FakeS3Storage:
+        bucket_name = "test-bucket"
+
+        def upload_file(self, source_path: Path, key: str | None = None) -> str:
+            uploaded.append((source_path, key))
+            return key or source_path.name
+
+    monkeypatch.setattr("app.services.storage_service.get_settings", lambda: type(
+        "Settings",
+        (),
+        {
+            "raw_storage_mode": "s3",
+            "raw_data_dir": tmp_path / "raw",
+        },
+    )())
+
+    storage = RawFileStorageService()
+    storage._s3_storage = FakeS3Storage()
+
+    raw_reference, processing_path = storage.store_raw_file(source_file)
+
+    assert raw_reference.startswith("s3://test-bucket/raw/")
+    assert processing_path == source_file
+    assert uploaded and uploaded[0][0] == source_file

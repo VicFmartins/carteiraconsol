@@ -26,7 +26,7 @@ class PositionRecord:
 @dataclass(slots=True, frozen=True)
 class ETLFileSummary:
     source_file: str
-    raw_file: Path
+    raw_file: str | Path
     processed_file: Path
     rows_processed: int
     rows_skipped: int

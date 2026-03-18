@@ -37,6 +37,8 @@ class Settings:
     aws_access_key_id: str
     aws_secret_access_key: str
     aws_default_region: str
+    s3_endpoint_url: str
+    s3_use_path_style: bool
     s3_bucket_name: str
     s3_bucket_prefix: str
     default_risk_profile: str
@@ -68,6 +70,8 @@ class Settings:
             aws_access_key_id=_get_env("AWS_ACCESS_KEY_ID", ""),
             aws_secret_access_key=_get_env("AWS_SECRET_ACCESS_KEY", ""),
             aws_default_region=_get_env("AWS_DEFAULT_REGION", _get_env("AWS_REGION", "us-east-1")),
+            s3_endpoint_url=_get_env("S3_ENDPOINT_URL", _get_env("AWS_S3_ENDPOINT_URL", "")),
+            s3_use_path_style=_get_bool_env("S3_USE_PATH_STYLE", False),
             s3_bucket_name=_get_env("S3_BUCKET_NAME", _get_env("AWS_S3_BUCKET", "")),
             s3_bucket_prefix=_get_env("S3_BUCKET_PREFIX", "incoming/"),
             default_risk_profile=_get_env("DEFAULT_RISK_PROFILE", "moderado").lower(),

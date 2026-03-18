@@ -36,7 +36,7 @@ class PortfolioETLPipeline:
         s3_key: str | None = None,
         s3_prefix: str | None = None,
     ) -> ETLFileSummary:
-        source_label, raw_file_path = self._resolve_source(
+        source_label, raw_reference, raw_file_path = self._resolve_source(
             source_path=source_path,
             source_type=source_type,
             s3_key=s3_key,
@@ -56,7 +56,7 @@ class PortfolioETLPipeline:
             else:
                 dataframe = self.reader.read(raw_file_path)
                 parser_name = dataframe.attrs.get("parser_name", "generic_reader")
-                raw_artifact_path = raw_file_path
+                raw_artifact_path = raw_reference
                 logger.info("Using parser %s for %s", parser_name, source_label)
             transformed = normalize_portfolio_frame(dataframe)
             classified = apply_asset_classification(transformed)
@@ -96,15 +96,16 @@ class PortfolioETLPipeline:
         source_type: str,
         s3_key: str | None,
         s3_prefix: str | None,
-    ) -> tuple[str, Path]:
+    ) -> tuple[str, str, Path]:
         if source_type == "s3":
-            return self.storage.fetch_s3_file_to_raw(s3_key=s3_key, s3_prefix=s3_prefix)
+            source_uri, local_path = self.storage.fetch_s3_file_to_raw(s3_key=s3_key, s3_prefix=s3_prefix)
+            return source_uri, source_uri, local_path
 
         if source_path is None:
             raise ValueError("source_path is required when source_type='local'")
 
         if source_path.is_dir():
-            return str(source_path), source_path
+            return str(source_path), str(source_path), source_path
 
-        raw_file_path = self.storage.store_raw_file(source_path)
-        return str(source_path), raw_file_path
+        raw_reference, processing_path = self.storage.store_raw_file(source_path)
+        return str(source_path), raw_reference, processing_path

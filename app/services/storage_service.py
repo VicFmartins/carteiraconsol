@@ -6,6 +6,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 import boto3
+from botocore.config import Config
 from botocore.exceptions import BotoCoreError, ClientError
 
 from app.core.config import get_settings
@@ -42,11 +43,15 @@ class S3StorageService:
         self.settings = get_settings()
         self.settings.validate_s3_settings()
         self.bucket_name = self.settings.s3_bucket_name
+        endpoint_url = getattr(self.settings, "s3_endpoint_url", "") or None
+        use_path_style = bool(getattr(self.settings, "s3_use_path_style", False))
         self.client = boto3.client(
             "s3",
             aws_access_key_id=self.settings.aws_access_key_id or None,
             aws_secret_access_key=self.settings.aws_secret_access_key or None,
             region_name=self.settings.aws_default_region,
+            endpoint_url=endpoint_url,
+            config=Config(s3={"addressing_style": "path" if use_path_style else "auto"}),
         )
 
     def upload_file(self, source_path: Path, key: str | None = None) -> str:
@@ -130,7 +135,7 @@ class S3StorageService:
 
 
 class RawFileStorageService:
-    """Persists raw input locally and can optionally mirror it to S3."""
+    """Persists raw input locally or stores it durably in S3-compatible storage."""
 
     def __init__(self) -> None:
         self.settings = get_settings()
@@ -143,11 +148,15 @@ class RawFileStorageService:
             self._s3_storage = S3StorageService()
         return self._s3_storage
 
-    def store_raw_file(self, source_path: Path) -> Path:
-        local_path = self.local_storage.store_raw_file(source_path)
+    def store_raw_file(self, source_path: Path) -> tuple[str, Path]:
         if self.settings.raw_storage_mode == "s3":
-            self.s3_storage.upload_file(local_path, key=f"raw/{local_path.name}")
-        return local_path
+            timestamp = datetime.now(UTC).strftime("%Y%m%d%H%M%S")
+            object_key = f"raw/{timestamp}_{source_path.name}"
+            self.s3_storage.upload_file(source_path, key=object_key)
+            return f"s3://{self.s3_storage.bucket_name}/{object_key}", source_path
+
+        local_path = self.local_storage.store_raw_file(source_path)
+        return str(local_path), local_path
 
     def fetch_s3_file_to_raw(self, *, s3_key: str | None = None, s3_prefix: str | None = None) -> tuple[str, Path]:
         if s3_key is None:
