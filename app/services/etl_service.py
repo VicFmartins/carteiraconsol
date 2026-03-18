@@ -81,6 +81,9 @@ class ETLService:
             processed_at=datetime.now(UTC).isoformat(),
             raw_file=str(summary.raw_file),
             processed_file=str(summary.processed_file),
+            detection_confidence=summary.detection_confidence,
+            review_required=summary.review_required,
+            review_reasons=list(summary.review_reasons),
         )
 
     @classmethod
@@ -106,6 +109,9 @@ class ETLService:
                 accounts_created=summary.accounts_created,
                 assets_created=summary.assets_created,
                 positions_upserted=summary.positions_upserted,
+                detection_confidence=summary.detection_confidence,
+                review_required=summary.review_required,
+                review_reasons=list(summary.review_reasons),
             )
             for summary in summaries
         ]

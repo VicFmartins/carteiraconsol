@@ -34,3 +34,6 @@ class ETLFileSummary:
     accounts_created: int
     assets_created: int
     positions_upserted: int
+    detection_confidence: float | None = None
+    review_required: bool = False
+    review_reasons: tuple[str, ...] = ()

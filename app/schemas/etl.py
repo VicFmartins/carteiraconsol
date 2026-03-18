@@ -45,6 +45,9 @@ class ETLFileResult(BaseModel):
     accounts_created: int = Field(ge=0)
     assets_created: int = Field(ge=0)
     positions_upserted: int = Field(ge=0)
+    detection_confidence: float | None = None
+    review_required: bool = False
+    review_reasons: list[str] = Field(default_factory=list)
 
 
 class ETLRunResponse(BaseModel):
@@ -64,3 +67,6 @@ class UploadResponse(BaseModel):
     processed_at: str
     raw_file: str
     processed_file: str
+    detection_confidence: float | None = None
+    review_required: bool = False
+    review_reasons: list[str] = Field(default_factory=list)

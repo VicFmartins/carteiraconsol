@@ -9,6 +9,9 @@ from pandas.errors import ParserError
 
 from app.core.config import get_settings
 from app.core.exceptions import ETLInputError
+from app.etl.detect.column_mapper import FuzzyColumnMapper
+from app.etl.detect.review_queue import evaluate_review_decision
+from app.etl.detect.structure_detector import StructureDetector
 from app.etl.extract.xp_common import detect_xp_file_kind
 from app.etl.extract.xp_json_parser import XPJsonParser
 from app.etl.extract.xp_movements_parser import XPMovementsParser
@@ -33,6 +36,8 @@ class FileReader:
         self.position_parser = XPPositionParser()
         self.movements_parser = XPMovementsParser()
         self.json_parser = XPJsonParser()
+        self.column_mapper = FuzzyColumnMapper()
+        self.structure_detector = StructureDetector(mapper=self.column_mapper)
 
     def read(self, file_path: Path) -> pd.DataFrame:
         if not file_path.exists() or not file_path.is_file():
@@ -51,10 +56,37 @@ class FileReader:
 
     def _read_generic_file(self, file_path: Path) -> pd.DataFrame:
         suffix = file_path.suffix.lower()
+        try:
+            detection_result = self.structure_detector.read(file_path)
+            dataframe = detection_result.dataframe
+            mapping_results = self.column_mapper.map_columns(list(dataframe.columns))
+            renamed_columns = self.column_mapper.apply_mapping(list(dataframe.columns), mapping_results)
+            dataframe = dataframe.rename(columns=renamed_columns)
+            review_decision = evaluate_review_decision(mapping_results)
+            dataframe.attrs["parser_name"] = "smart_tabular_reader"
+            dataframe.attrs["structure_detection"] = detection_result.detection.as_dict()
+            dataframe.attrs["column_mapping"] = [result.as_dict() for result in mapping_results]
+            dataframe.attrs["review_decision"] = review_decision.as_dict()
+            dataframe.attrs["review_required"] = review_decision.review_required
+            dataframe.attrs["detection_confidence"] = review_decision.confidence_score
+            logger.info(
+                "Smart detection succeeded for %s with confidence %.2f and review_required=%s",
+                file_path,
+                review_decision.confidence_score,
+                review_decision.review_required,
+            )
+            if review_decision.review_required:
+                logger.warning("Smart detection flagged %s for review: %s", file_path, review_decision.reasons)
+            return dataframe
+        except ETLInputError:
+            logger.warning("Smart tabular detection failed for %s. Falling back to legacy reader.", file_path)
+
         if suffix == ".csv":
             return self._read_csv(file_path)
         if suffix in {".xlsx", ".xls"}:
-            return pd.read_excel(file_path, dtype=str)
+            dataframe = pd.read_excel(file_path, dtype=str)
+            dataframe.attrs["parser_name"] = "generic_excel_reader"
+            return dataframe
         raise ETLInputError(f"Unsupported input file type: {suffix}")
 
     def _read_xp_file(self, file_path: Path, parser_kind: str) -> pd.DataFrame:
@@ -89,6 +121,7 @@ class FileReader:
                     encoding,
                     "auto" if separator is None else separator,
                 )
+                dataframe.attrs["parser_name"] = "generic_csv_reader"
                 return dataframe
             except ParserError:
                 continue

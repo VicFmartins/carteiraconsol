@@ -9,6 +9,7 @@ import pandas as pd
 
 from app.core.config import get_settings
 from app.core.exceptions import ETLValidationError
+from app.etl.detect.value_parsers import cleanup_ticker
 from app.etl.transform.parsers import (
     is_blankish,
     normalize_lookup_text,
@@ -177,7 +178,7 @@ def resolve_canonical_column(column_name: str) -> str:
 def normalize_ticker(value: object) -> str | None:
     if is_blankish(value):
         return None
-    return "".join(str(value).strip().upper().split()) or None
+    return cleanup_ticker(value)
 
 
 def normalize_asset_name(value: object) -> str:

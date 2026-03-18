@@ -58,6 +58,10 @@ class PortfolioETLPipeline:
                 parser_name = dataframe.attrs.get("parser_name", "generic_reader")
                 raw_artifact_path = raw_reference
                 logger.info("Using parser %s for %s", parser_name, source_label)
+            review_decision = dataframe.attrs.get("review_decision", {})
+            detection_confidence = dataframe.attrs.get("detection_confidence")
+            review_required = bool(dataframe.attrs.get("review_required", False))
+            review_reasons = tuple(review_decision.get("reasons", ()))
             transformed = normalize_portfolio_frame(dataframe)
             classified = apply_asset_classification(transformed)
             enriched = enrich_assets(classified)
@@ -80,6 +84,9 @@ class PortfolioETLPipeline:
                 processed_file=processed_file_path,
                 rows_processed=int(len(enriched)),
                 rows_skipped=rows_skipped,
+                detection_confidence=detection_confidence,
+                review_required=review_required,
+                review_reasons=review_reasons,
                 **load_stats,
             )
         except ApplicationError:

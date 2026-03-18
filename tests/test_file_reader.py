@@ -18,6 +18,7 @@ def test_file_reader_preserves_accented_characters_for_supported_csv_encodings(
 
     dataframe = FileReader().read(file_path)
 
-    assert dataframe.loc[0, "Cliente"] == "João Mendes"
-    assert dataframe.loc[0, "Corretora"] == "Itaú"
-    assert dataframe.loc[0, "Preço Médio"] == "1.050,00"
+    assert dataframe.attrs["parser_name"] == "smart_tabular_reader"
+    assert dataframe.loc[0, "client_name"] == "João Mendes"
+    assert dataframe.loc[0, "broker"] == "Itaú"
+    assert dataframe.loc[0, "avg_price"] == "1.050,00"
