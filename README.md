@@ -341,8 +341,8 @@ Ver serviços:
 
 ```powershell
 docker compose --env-file .env.docker ps
-docker compose --env-file .env.docker logs api
-docker compose --env-file .env.docker logs minio-init
+docker compose --env-file .env.docker logs backend
+docker compose --env-file .env.docker logs minio_setup
 ```
 
 Parar e remover volumes:
@@ -353,14 +353,14 @@ docker compose --env-file .env.docker down -v
 
 Endpoints úteis:
 
-- API: `http://127.0.0.1:8010`
-- Swagger: `http://127.0.0.1:8010/docs`
+- API: `http://127.0.0.1:8000`
+- Swagger: `http://127.0.0.1:8000/docs`
 - MinIO API: `http://127.0.0.1:9000`
 - MinIO Console: `http://127.0.0.1:9001`
 
-Nesse modo, use `RAW_STORAGE_MODE=s3` com `S3_ENDPOINT_URL=http://minio:9000` e `S3_USE_PATH_STYLE=true`, como já configurado em `.env.docker`.
+Nesse modo, use `RAW_STORAGE_MODE=s3` com `AWS_ENDPOINT_URL=http://minio:9000` e `AWS_S3_FORCE_PATH_STYLE=true`, como já configurado em `.env.docker`.
 
-`API_PORT` foi separado no `.env.docker` para evitar conflito com um backend local rodando em `8000`.
+O `.env.docker` usa `PORT=8000` para expor a API localmente na mesma porta do ambiente padrão.
 
 Fluxo validado localmente com essa stack:
 
