@@ -1,0 +1,25 @@
+class ApplicationError(Exception):
+    def __init__(self, message: str, *, error_code: str = "application_error") -> None:
+        super().__init__(message)
+        self.message = message
+        self.error_code = error_code
+
+
+class ResourceNotFoundError(ApplicationError):
+    def __init__(self, message: str) -> None:
+        super().__init__(message, error_code="resource_not_found")
+
+
+class ETLInputError(ApplicationError):
+    def __init__(self, message: str) -> None:
+        super().__init__(message, error_code="etl_input_error")
+
+
+class ETLValidationError(ApplicationError):
+    def __init__(self, message: str) -> None:
+        super().__init__(message, error_code="etl_validation_error")
+
+
+class S3OperationError(ApplicationError):
+    def __init__(self, message: str) -> None:
+        super().__init__(message, error_code="s3_operation_error")

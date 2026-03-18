@@ -1,0 +1,142 @@
+from __future__ import annotations
+
+import os
+from dataclasses import dataclass
+from functools import lru_cache
+from pathlib import Path
+
+from dotenv import load_dotenv
+
+
+BASE_DIR = Path(__file__).resolve().parents[2]
+ENV_FILE = BASE_DIR / ".env"
+load_dotenv(ENV_FILE)
+
+VALID_LOG_LEVELS = {"CRITICAL", "ERROR", "WARNING", "INFO", "DEBUG"}
+VALID_STORAGE_MODES = {"local", "s3"}
+
+
+def _get_env(name: str, default: str) -> str:
+    return os.getenv(name, default).strip()
+
+
+def _get_bool_env(name: str, default: bool) -> bool:
+    raw_value = os.getenv(name)
+    if raw_value is None:
+        return default
+    return raw_value.strip().lower() in {"1", "true", "yes", "on"}
+
+
+@dataclass(frozen=True, slots=True)
+class Settings:
+    project_name: str
+    app_env: str
+    app_version: str
+    log_level: str
+    database_url: str
+    aws_access_key_id: str
+    aws_secret_access_key: str
+    aws_default_region: str
+    s3_bucket_name: str
+    s3_bucket_prefix: str
+    default_risk_profile: str
+    raw_storage_mode: str
+    auto_create_tables: bool
+    api_prefix: str
+
+    @classmethod
+    def from_env(cls) -> "Settings":
+        log_level = _get_env("LOG_LEVEL", "INFO").upper()
+        if log_level not in VALID_LOG_LEVELS:
+            raise ValueError(f"Invalid LOG_LEVEL '{log_level}'. Expected one of: {sorted(VALID_LOG_LEVELS)}")
+
+        raw_storage_mode = _get_env("RAW_STORAGE_MODE", "local").lower()
+        if raw_storage_mode not in VALID_STORAGE_MODES:
+            raise ValueError(
+                f"Invalid RAW_STORAGE_MODE '{raw_storage_mode}'. Expected one of: {sorted(VALID_STORAGE_MODES)}"
+            )
+
+        return cls(
+            project_name=_get_env("PROJECT_NAME", "CarteiraConsol"),
+            app_env=_get_env("APP_ENV", "development"),
+            app_version=_get_env("APP_VERSION", "0.1.0"),
+            log_level=log_level,
+            database_url=_get_env(
+                "DATABASE_URL",
+                "postgresql+psycopg://postgres:postgres@localhost:5432/etl_db",
+            ),
+            aws_access_key_id=_get_env("AWS_ACCESS_KEY_ID", ""),
+            aws_secret_access_key=_get_env("AWS_SECRET_ACCESS_KEY", ""),
+            aws_default_region=_get_env("AWS_DEFAULT_REGION", _get_env("AWS_REGION", "us-east-1")),
+            s3_bucket_name=_get_env("S3_BUCKET_NAME", _get_env("AWS_S3_BUCKET", "")),
+            s3_bucket_prefix=_get_env("S3_BUCKET_PREFIX", "incoming/"),
+            default_risk_profile=_get_env("DEFAULT_RISK_PROFILE", "moderado").lower(),
+            raw_storage_mode=raw_storage_mode,
+            auto_create_tables=_get_bool_env("AUTO_CREATE_TABLES", True),
+            api_prefix=_get_env("API_PREFIX", ""),
+        )
+
+    @property
+    def base_dir(self) -> Path:
+        return BASE_DIR
+
+    @property
+    def data_dir(self) -> Path:
+        return self.base_dir / "data"
+
+    @property
+    def raw_data_dir(self) -> Path:
+        return self.data_dir / "raw"
+
+    @property
+    def processed_data_dir(self) -> Path:
+        return self.data_dir / "processed"
+
+    @property
+    def samples_dir(self) -> Path:
+        return self.data_dir / "samples"
+
+    @property
+    def real_inputs_dir(self) -> Path:
+        return self.data_dir / "real_inputs"
+
+    @property
+    def supported_extensions(self) -> tuple[str, ...]:
+        return (".csv", ".xlsx", ".xls", ".json")
+
+    @property
+    def is_postgresql(self) -> bool:
+        return self.database_url.startswith("postgresql")
+
+    @property
+    def is_sqlite(self) -> bool:
+        return self.database_url.startswith("sqlite")
+
+    def ensure_directories(self) -> None:
+        for directory in (self.data_dir, self.raw_data_dir, self.processed_data_dir, self.samples_dir, self.real_inputs_dir):
+            directory.mkdir(parents=True, exist_ok=True)
+
+    def missing_s3_settings(self) -> list[str]:
+        missing: list[str] = []
+        if not self.s3_bucket_name:
+            missing.append("S3_BUCKET_NAME")
+        return missing
+
+    def validate_s3_settings(self) -> None:
+        missing = self.missing_s3_settings()
+        if missing:
+            raise ValueError(
+                "Missing required S3 configuration: "
+                + ", ".join(missing)
+                + f". Update {ENV_FILE} or your shell environment."
+            )
+
+
+@lru_cache(maxsize=1)
+def get_settings() -> Settings:
+    load_dotenv(ENV_FILE, override=False)
+    return Settings.from_env()
+
+
+def clear_settings_cache() -> None:
+    get_settings.cache_clear()
