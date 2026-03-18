@@ -42,6 +42,8 @@ def get_session_factory() -> sessionmaker[Session]:
 def init_db() -> None:
     import app.models  # noqa: F401
 
+    # Development convenience only. Production environments should rely on
+    # explicit, reviewed schema migrations instead of create_all().
     Base.metadata.create_all(bind=get_engine())
     logger.info("Database schema ensured successfully.")
 
@@ -64,6 +66,9 @@ def get_db() -> Generator[Session, None, None]:
     db = get_session_factory()()
     try:
         yield db
+    except Exception:
+        db.rollback()
+        raise
     finally:
         db.close()
 

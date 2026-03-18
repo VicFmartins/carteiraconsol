@@ -1,11 +1,11 @@
 from __future__ import annotations
 
+import asyncio
 import logging
+from functools import partial
 
-from fastapi import APIRouter, Depends, File, UploadFile
-from sqlalchemy.orm import Session
+from fastapi import APIRouter, File, UploadFile
 
-from app.db.session import get_db
 from app.schemas.common import APIResponse
 from app.schemas.etl import UploadResponse
 from app.services.etl_service import ETLService
@@ -18,13 +18,11 @@ router = APIRouter()
 @router.post("/upload", response_model=APIResponse[UploadResponse])
 async def upload_portfolio_file(
     file: UploadFile = File(...),
-    db: Session = Depends(get_db),
 ) -> APIResponse[UploadResponse]:
-    service = ETLService(db)
-    temp_path = service.save_uploaded_file(file.filename or "", file.file)
-    try:
-        result = service.process_uploaded_file(temp_path, original_filename=file.filename)
-        return APIResponse(data=result)
-    finally:
-        temp_path.unlink(missing_ok=True)
-        logger.info("Removed temporary uploaded file %s", temp_path)
+    loop = asyncio.get_running_loop()
+    result = await loop.run_in_executor(
+        None,
+        partial(ETLService.process_uploaded_stream, file.filename or "", file.file),
+    )
+    logger.info("Completed uploaded file processing for %s", file.filename)
+    return APIResponse(data=result)

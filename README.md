@@ -218,10 +218,12 @@ AUTO_CREATE_TABLES=true
 API_PREFIX=
 ```
 
+`AUTO_CREATE_TABLES` existe como conveniência para desenvolvimento local. Em ambientes compartilhados ou de produção, prefira deixá-lo como `false` e aplicar mudanças de schema via migrações explícitas e revisadas.
+
 ### 4. Instalar Dependências do Backend
 
 ```powershell
-cd C:\Users\vitor\OneDrive\Documentos\Playground\carteiraconsol
+cd C:\Users\vitor\OneDrive\Documentos\Playground
 python -m pip install -r requirements.txt
 ```
 
@@ -259,7 +261,7 @@ http://127.0.0.1:8000/docs
 ### 7. Instalar e Rodar o Frontend
 
 ```powershell
-cd C:\Users\vitor\OneDrive\Documentos\Playground\carteiraconsol\frontend
+cd C:\Users\vitor\OneDrive\Documentos\Playground\frontend
 npm install
 npm run dev
 ```
@@ -347,7 +349,7 @@ O upload já está integrado ponta a ponta entre frontend e backend.
 ### Exemplo de Request
 
 ```powershell
-curl.exe -X POST "http://127.0.0.1:8000/upload" -F "file=@C:\Users\vitor\OneDrive\Documentos\Playground\carteiraconsol\data\samples\sample_portfolio.csv"
+curl.exe -X POST "http://127.0.0.1:8000/upload" -F "file=@C:\Users\vitor\OneDrive\Documentos\Playground\data\samples\sample_portfolio.csv"
 ```
 
 ### Exemplo de Resposta

@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
 from app.core.exceptions import ETLInputError, ResourceNotFoundError
+from app.db.session import session_scope
 from app.etl.extract.file_reader import discover_input_files
 from app.etl.pipeline import PortfolioETLPipeline
 from app.schemas.etl import ETLFileResult, ETLRunResponse, UploadResponse
@@ -81,6 +82,17 @@ class ETLService:
             raw_file=str(summary.raw_file),
             processed_file=str(summary.processed_file),
         )
+
+    @classmethod
+    def process_uploaded_stream(cls, filename: str, file_stream: BinaryIO) -> UploadResponse:
+        with session_scope() as db:
+            service = cls(db)
+            temp_path = service.save_uploaded_file(filename, file_stream)
+            try:
+                return service.process_uploaded_file(temp_path, original_filename=filename)
+            finally:
+                temp_path.unlink(missing_ok=True)
+                logger.info("Removed temporary uploaded file %s", temp_path)
 
     def _build_response(self, summaries) -> ETLRunResponse:
         results = [
