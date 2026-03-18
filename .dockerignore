@@ -1,0 +1,32 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Data (mounted as volume in docker-compose)
+data/
+
+# Frontend (built separately)
+frontend/
+
+# Environment files with real secrets
+.env
+
+# Git
+.git/
+.github/
+
+# Docs
+docs/
+README.md
+
+# Tests
+tests/
