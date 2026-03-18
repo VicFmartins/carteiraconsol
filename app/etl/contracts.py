@@ -38,6 +38,7 @@ class ETLFileSummary:
     review_required: bool = False
     review_reasons: tuple[str, ...] = ()
     parser_name: str | None = None
+    layout_signature: str | None = None
     detected_columns: tuple[str, ...] = ()
     applied_mappings: tuple[dict[str, object], ...] = ()
     structure_detection: dict[str, object] | None = None

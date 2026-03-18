@@ -396,6 +396,7 @@ GET /assets
 GET /positions
 GET /ingestion-reports
 GET /ingestion-reports/{id}
+PATCH /ingestion-reports/{id}/review
 ```
 
 ### Filtros e Paginação

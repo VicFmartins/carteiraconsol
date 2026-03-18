@@ -9,7 +9,7 @@ from pandas.errors import ParserError
 
 from app.core.config import get_settings
 from app.core.exceptions import ETLInputError
-from app.etl.detect.column_mapper import FuzzyColumnMapper
+from app.etl.detect.column_mapper import FuzzyColumnMapper, build_layout_signature
 from app.etl.detect.review_queue import evaluate_review_decision
 from app.etl.detect.structure_detector import StructureDetector
 from app.etl.extract.xp_common import detect_xp_file_kind
@@ -32,12 +32,13 @@ def discover_input_files(directory: Path) -> list[Path]:
 
 
 class FileReader:
-    def __init__(self) -> None:
+    def __init__(self, *, mapping_resolver=None, mapper: FuzzyColumnMapper | None = None) -> None:
         self.position_parser = XPPositionParser()
         self.movements_parser = XPMovementsParser()
         self.json_parser = XPJsonParser()
-        self.column_mapper = FuzzyColumnMapper()
+        self.column_mapper = mapper or FuzzyColumnMapper()
         self.structure_detector = StructureDetector(mapper=self.column_mapper)
+        self.mapping_resolver = mapping_resolver
 
     def read(self, file_path: Path) -> pd.DataFrame:
         if not file_path.exists() or not file_path.is_file():
@@ -60,12 +61,15 @@ class FileReader:
             detection_result = self.structure_detector.read(file_path)
             original_columns = list(detection_result.dataframe.columns)
             dataframe = detection_result.dataframe
-            mapping_results = self.column_mapper.map_columns(list(dataframe.columns))
+            layout_signature = build_layout_signature(original_columns)
+            preferred_mappings = self.mapping_resolver(layout_signature) if self.mapping_resolver is not None else {}
+            mapping_results = self.column_mapper.map_columns(list(dataframe.columns), preferred_mappings=preferred_mappings)
             renamed_columns = self.column_mapper.apply_mapping(list(dataframe.columns), mapping_results)
             dataframe = dataframe.rename(columns=renamed_columns)
             review_decision = evaluate_review_decision(mapping_results)
             dataframe.attrs["parser_name"] = "smart_tabular_reader"
             dataframe.attrs["detected_columns"] = original_columns
+            dataframe.attrs["layout_signature"] = layout_signature
             dataframe.attrs["structure_detection"] = detection_result.detection.as_dict()
             dataframe.attrs["column_mapping"] = [result.as_dict() for result in mapping_results]
             dataframe.attrs["review_decision"] = review_decision.as_dict()
@@ -89,6 +93,7 @@ class FileReader:
             dataframe = pd.read_excel(file_path, dtype=str)
             dataframe.attrs["parser_name"] = "generic_excel_reader"
             dataframe.attrs["detected_columns"] = list(dataframe.columns)
+            dataframe.attrs["layout_signature"] = build_layout_signature(list(dataframe.columns))
             return dataframe
         raise ETLInputError(f"Unsupported input file type: {suffix}")
 
@@ -126,6 +131,7 @@ class FileReader:
                 )
                 dataframe.attrs["parser_name"] = "generic_csv_reader"
                 dataframe.attrs["detected_columns"] = list(dataframe.columns)
+                dataframe.attrs["layout_signature"] = build_layout_signature(list(dataframe.columns))
                 return dataframe
             except ParserError:
                 continue

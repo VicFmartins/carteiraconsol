@@ -48,6 +48,7 @@ class ETLFileResult(BaseModel):
     positions_upserted: int = Field(ge=0)
     detection_confidence: float | None = None
     review_required: bool = False
+    review_status: str | None = None
     review_reasons: list[str] = Field(default_factory=list)
 
 
@@ -71,4 +72,5 @@ class UploadResponse(BaseModel):
     processed_file: str
     detection_confidence: float | None = None
     review_required: bool = False
+    review_status: str | None = None
     review_reasons: list[str] = Field(default_factory=list)

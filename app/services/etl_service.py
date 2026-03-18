@@ -116,6 +116,7 @@ class ETLService:
             processed_file=str(summary.processed_file),
             detection_confidence=summary.detection_confidence,
             review_required=summary.review_required,
+            review_status=report.review_status,
             review_reasons=list(summary.review_reasons),
         )
 
@@ -145,6 +146,7 @@ class ETLService:
                 positions_upserted=summary.positions_upserted,
                 detection_confidence=summary.detection_confidence,
                 review_required=summary.review_required,
+                review_status=report.review_status,
                 review_reasons=list(summary.review_reasons),
             )
             for summary, report in results

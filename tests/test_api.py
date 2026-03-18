@@ -16,12 +16,16 @@ from app.db.base import Base
 from app.db.session import get_db
 from app.main import create_app
 from app.models.account import Account
+from app.models.accepted_column_mapping import AcceptedColumnMapping
 from app.models.asset_master import AssetMaster
 from app.models.client import Client
 from app.models.ingestion_report import IngestionReport
 from app.models.position_history import PositionHistory
 from app.api.routes import upload as upload_route_module
+from app.etl.detect.column_mapper import FuzzyColumnMapper
+from app.etl.extract.file_reader import FileReader
 from app.schemas.etl import UploadResponse
+from app.services.accepted_mapping_service import AcceptedMappingService
 from app.services.etl_service import ETLService
 
 
@@ -91,6 +95,7 @@ def api_client(tmp_path, monkeypatch):
         session.close()
 
     app = create_app()
+    app.state.testing_session_factory = TestingSessionLocal
 
     def override_get_db():
         db = TestingSessionLocal()
@@ -174,6 +179,7 @@ def test_upload_endpoint_processes_a_supported_file(api_client: TestClient) -> N
     assert reports_payload["pagination"]["total"] == 1
     assert reports_payload["data"][0]["id"] == payload["data"]["ingestion_report_id"]
     assert reports_payload["data"][0]["status"] == "success"
+    assert reports_payload["data"][0]["review_status"] == "not_required"
 
     Path(payload["data"]["raw_file"]).unlink(missing_ok=True)
     Path(payload["data"]["processed_file"]).unlink(missing_ok=True)
@@ -267,7 +273,8 @@ def test_upload_persists_review_required_ingestion_report(api_client: TestClient
     report = reports_payload["data"][0]
     assert report["id"] == payload["ingestion_report_id"]
     assert report["review_required"] is True
-    assert report["status"] == "success"
+    assert report["status"] == "review_required"
+    assert report["review_status"] == "pending"
     assert "cliente" in [column.lower() for column in report["detected_columns"]]
 
 
@@ -293,3 +300,80 @@ def test_get_ingestion_report_returns_report_details(api_client: TestClient) -> 
     assert payload["filename"] == "carteira_detalhe.csv"
     assert payload["status"] == "success"
     assert payload["parser_name"] in {"smart_tabular_reader", "generic_csv_reader"}
+
+
+def test_ingestion_report_review_approval_persists_accepted_mappings_and_reuses_them(
+    api_client: TestClient,
+    tmp_path: Path,
+) -> None:
+    csv_content = "\n".join(
+        [
+            "Cliente do Investidor;Instituição Financeira;Papel / Ativo;Qtde Total",
+            "Carlos Lima;XP Investimentos;Tesouro Selic 2029;2",
+        ]
+    ).encode("utf-8")
+
+    upload_response = api_client.post(
+        "/upload",
+        files={"file": ("layout_para_review.csv", csv_content, "text/csv")},
+    )
+    report_id = upload_response.json()["data"]["ingestion_report_id"]
+
+    review_response = api_client.patch(
+        f"/ingestion-reports/{report_id}/review",
+        json={"review_status": "approved", "approved_by": "ops@carteira.local"},
+    )
+
+    assert review_response.status_code == 200
+    reviewed_report = review_response.json()["data"]
+    assert reviewed_report["review_status"] == "approved"
+    assert reviewed_report["review_required"] is False
+
+    session = api_client.app.state.testing_session_factory()
+    try:
+        mappings = session.query(AcceptedColumnMapping).all()
+        assert len(mappings) >= 4
+        layout_signature = reviewed_report["layout_signature"]
+        preferred_mappings = AcceptedMappingService(session).get_preferred_mappings(layout_signature=layout_signature)
+        assert preferred_mappings["cliente do investidor"] == "client_name"
+
+        file_reader = FileReader(
+            mapping_resolver=lambda signature: AcceptedMappingService(session).get_preferred_mappings(layout_signature=signature),
+            mapper=FuzzyColumnMapper(threshold=101.0),
+        )
+        tmp_file = tmp_path / "reuse_layout.csv"
+        tmp_file.write_text(
+            "\n".join(
+                [
+                    "Cliente do Investidor;Instituição Financeira;Papel / Ativo;Qtde Total",
+                    "Carlos Lima;XP Investimentos;Tesouro Selic 2029;2",
+                ]
+            ),
+            encoding="utf-8",
+        )
+        dataframe = file_reader.read(tmp_file)
+        assert dataframe.attrs["column_mapping"][0]["matched_alias"] == "accepted_mapping"
+        assert "client_name" in dataframe.columns
+        assert "asset_name" in dataframe.columns
+        assert "quantity" in dataframe.columns
+        assert dataframe.loc[0, "client_name"] == "Carlos Lima"
+        tmp_file.unlink(missing_ok=True)
+    finally:
+        session.close()
+
+
+def test_ingestion_reports_support_review_status_filter(api_client: TestClient) -> None:
+    csv_content = "\n".join(
+        [
+            "cliente,corretora,ativo,quantidade",
+            "Carlos Lima,XP,Tesouro Selic 2029,2",
+        ]
+    ).encode("utf-8")
+    api_client.post("/upload", files={"file": ("pendente.csv", csv_content, "text/csv")})
+
+    response = api_client.get("/ingestion-reports", params={"review_status": "pending"})
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["pagination"]["total"] == 1
+    assert payload["data"][0]["review_status"] == "pending"

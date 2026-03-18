@@ -14,6 +14,7 @@ from app.etl.load.loader import PortfolioLoader
 from app.etl.transform.classifier import apply_asset_classification
 from app.etl.transform.normalizer import normalize_portfolio_frame
 from app.services.storage_service import RawFileStorageService
+from app.services.accepted_mapping_service import AcceptedMappingService
 from app.utils.files import write_dataframe_snapshot, write_dataframe_to_csv
 
 
@@ -23,7 +24,8 @@ logger = logging.getLogger(__name__)
 class PortfolioETLPipeline:
     def __init__(self, db: Session) -> None:
         self.db = db
-        self.reader = FileReader()
+        accepted_mappings = AcceptedMappingService(db)
+        self.reader = FileReader(mapping_resolver=lambda layout_signature: accepted_mappings.get_preferred_mappings(layout_signature=layout_signature))
         self.xp_bundle_parser = XPBundleParser()
         self.loader = PortfolioLoader(db)
         self.storage = RawFileStorageService()
@@ -62,6 +64,7 @@ class PortfolioETLPipeline:
             detection_confidence = dataframe.attrs.get("detection_confidence")
             review_required = bool(dataframe.attrs.get("review_required", False))
             review_reasons = tuple(review_decision.get("reasons", ()))
+            layout_signature = dataframe.attrs.get("layout_signature")
             detected_columns = tuple(str(column) for column in dataframe.attrs.get("detected_columns", tuple(dataframe.columns)))
             applied_mappings = tuple(dict(item) for item in dataframe.attrs.get("column_mapping", ()))
             structure_detection = dataframe.attrs.get("structure_detection")
@@ -91,6 +94,7 @@ class PortfolioETLPipeline:
                 review_required=review_required,
                 review_reasons=review_reasons,
                 parser_name=parser_name,
+                layout_signature=str(layout_signature) if layout_signature else None,
                 detected_columns=detected_columns,
                 applied_mappings=applied_mappings,
                 structure_detection=dict(structure_detection) if isinstance(structure_detection, dict) else None,
