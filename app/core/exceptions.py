@@ -20,6 +20,11 @@ class ETLValidationError(ApplicationError):
         super().__init__(message, error_code="etl_validation_error")
 
 
+class UploadTooLargeError(ApplicationError):
+    def __init__(self, message: str) -> None:
+        super().__init__(message, error_code="upload_too_large")
+
+
 class S3OperationError(ApplicationError):
     def __init__(self, message: str) -> None:
         super().__init__(message, error_code="s3_operation_error")

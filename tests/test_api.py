@@ -19,6 +19,7 @@ from app.models.account import Account
 from app.models.asset_master import AssetMaster
 from app.models.client import Client
 from app.models.position_history import PositionHistory
+from app.api.routes import upload as upload_route_module
 from app.schemas.etl import UploadResponse
 from app.services.etl_service import ETLService
 
@@ -213,3 +214,20 @@ def test_upload_endpoint_materializes_file_before_executor(
     assert captured["filename"] == "carteira.csv"
     assert captured["stream_type"] is io.BytesIO
     assert captured["content"] == b"coluna\nvalor\n"
+
+
+def test_upload_endpoint_rejects_payloads_larger_than_limit(
+    api_client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(upload_route_module, "MAX_UPLOAD_SIZE_BYTES", 8)
+
+    response = api_client.post(
+        "/upload",
+        files={"file": ("carteira.csv", b"123456789", "text/csv")},
+    )
+
+    assert response.status_code == 413
+    payload = response.json()
+    assert payload["status"] == "error"
+    assert payload["error_code"] == "upload_too_large"

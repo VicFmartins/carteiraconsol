@@ -220,6 +220,8 @@ API_PREFIX=
 
 `AUTO_CREATE_TABLES` existe como conveniência para desenvolvimento local. Em ambientes compartilhados ou de produção, prefira deixá-lo como `false` e aplicar mudanças de schema via migrações explícitas e revisadas.
 
+Hoje o projeto ainda não inclui Alembic versionado. Isso significa que a evolução de schema em produção não deve depender de `create_all()`: a recomendação é introduzir migrações controladas antes de qualquer rollout produtivo.
+
 ### 4. Instalar Dependências do Backend
 
 ```powershell
@@ -673,6 +675,21 @@ python scripts/verify_s3_access.py
 ```powershell
 python -m pytest
 ```
+
+## 🔁 CI / GitHub Actions
+
+O repositório inclui uma baseline de CI em [.github/workflows/ci.yml](C:/Users/vitor/OneDrive/Documentos/Playground/.github/workflows/ci.yml), executada em `push` e `pull_request`.
+
+Ela valida:
+
+- backend:
+  - instalação via `requirements.txt`
+  - execução de `python -m pytest`
+- frontend:
+  - instalação via `npm ci` em `frontend/`
+  - build via `npm run build`
+
+Essa baseline não depende de secrets e foi pensada para verificação pública e reprodutível do projeto.
 
 ## 🗺️ Roadmap / Melhorias Futuras
 

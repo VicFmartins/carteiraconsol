@@ -43,7 +43,12 @@ def create_app() -> FastAPI:
 
     @app.exception_handler(ApplicationError)
     async def application_error_handler(_: Request, exc: ApplicationError) -> JSONResponse:
-        status_code = 404 if exc.error_code == "resource_not_found" else 422
+        if exc.error_code == "resource_not_found":
+            status_code = 404
+        elif exc.error_code == "upload_too_large":
+            status_code = 413
+        else:
+            status_code = 422
         payload = ErrorResponse(detail=exc.message, error_code=exc.error_code)
         return JSONResponse(status_code=status_code, content=payload.model_dump())
 
