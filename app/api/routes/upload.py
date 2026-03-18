@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import io
 import logging
 from functools import partial
 
@@ -19,10 +20,12 @@ router = APIRouter()
 async def upload_portfolio_file(
     file: UploadFile = File(...),
 ) -> APIResponse[UploadResponse]:
+    file_bytes = await file.read()
+    stream = io.BytesIO(file_bytes)
     loop = asyncio.get_running_loop()
     result = await loop.run_in_executor(
         None,
-        partial(ETLService.process_uploaded_stream, file.filename or "", file.file),
+        partial(ETLService.process_uploaded_stream, file.filename or "", stream),
     )
     logger.info("Completed uploaded file processing for %s", file.filename)
     return APIResponse(data=result)

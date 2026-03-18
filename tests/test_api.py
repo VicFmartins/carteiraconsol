@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import io
 from datetime import date
 from datetime import datetime
 from decimal import Decimal
@@ -18,6 +19,8 @@ from app.models.account import Account
 from app.models.asset_master import AssetMaster
 from app.models.client import Client
 from app.models.position_history import PositionHistory
+from app.schemas.etl import UploadResponse
+from app.services.etl_service import ETLService
 
 
 @pytest.fixture
@@ -176,3 +179,37 @@ def test_upload_endpoint_rejects_unsupported_extension(api_client: TestClient) -
     payload = response.json()
     assert payload["status"] == "error"
     assert payload["error_code"] == "etl_input_error"
+
+
+def test_upload_endpoint_materializes_file_before_executor(
+    api_client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, object] = {}
+
+    def fake_process_uploaded_stream(filename: str, file_stream: io.BytesIO) -> UploadResponse:
+        captured["filename"] = filename
+        captured["stream_type"] = type(file_stream)
+        captured["content"] = file_stream.read()
+        return UploadResponse(
+            filename=filename,
+            detected_type="csv",
+            rows_processed=1,
+            rows_skipped=0,
+            message="ok",
+            processed_at=datetime.now().isoformat(),
+            raw_file="data/raw/upload.csv",
+            processed_file="data/processed/normalized.csv",
+        )
+
+    monkeypatch.setattr(ETLService, "process_uploaded_stream", fake_process_uploaded_stream)
+
+    response = api_client.post(
+        "/upload",
+        files={"file": ("carteira.csv", b"coluna\nvalor\n", "text/csv")},
+    )
+
+    assert response.status_code == 200
+    assert captured["filename"] == "carteira.csv"
+    assert captured["stream_type"] is io.BytesIO
+    assert captured["content"] == b"coluna\nvalor\n"
