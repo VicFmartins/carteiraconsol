@@ -9,6 +9,7 @@ venv/
 *.pyd
 *.db
 *.sqlite3
+.tmp_docx/
 data/raw/*
 !data/raw/.gitkeep
 data/processed/*
