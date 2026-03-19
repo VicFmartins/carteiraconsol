@@ -13,6 +13,7 @@ type ReviewQueueWorkspaceProps = {
   onRefresh: () => void;
   onSelectReport: (reportId: number) => void;
   onReviewAction: (reviewStatus: ReviewStatus) => void;
+  onApproveAndReprocess: () => void;
 };
 
 function StatusBadge({
@@ -88,7 +89,8 @@ export default function ReviewQueueWorkspace({
   onFilterChange,
   onRefresh,
   onSelectReport,
-  onReviewAction
+  onReviewAction,
+  onApproveAndReprocess
 }: ReviewQueueWorkspaceProps) {
   const filters: ReviewQueueFilter[] = ["pending", "review_required", "recent"];
 
@@ -253,6 +255,16 @@ export default function ReviewQueueWorkspace({
                     {formatDateTime(selectedReport.processedAt ?? selectedReport.createdAt)}
                   </div>
                 </div>
+                <div className="rounded-2xl border border-slate-100 bg-slate-50 px-4 py-4">
+                  <div className="text-[11px] uppercase tracking-[0.16em] text-slate-400">Reprocessed at</div>
+                  <div className="mt-2 text-sm font-semibold text-slate-900">
+                    {selectedReport.reprocessedAt ? formatDateTime(selectedReport.reprocessedAt) : "-"}
+                  </div>
+                </div>
+                <div className="rounded-2xl border border-slate-100 bg-slate-50 px-4 py-4">
+                  <div className="text-[11px] uppercase tracking-[0.16em] text-slate-400">Reprocess count</div>
+                  <div className="mt-2 text-sm font-semibold text-slate-900">{selectedReport.reprocessCount}</div>
+                </div>
               </div>
 
               <div className="mt-6 rounded-[24px] border border-slate-200 bg-slate-50 px-5 py-5">
@@ -273,6 +285,16 @@ export default function ReviewQueueWorkspace({
                       {reviewStatusLabel(status)}
                     </button>
                   ))}
+                  {selectedReport.reviewStatus === "pending" || selectedReport.reviewStatus === "approved" ? (
+                    <button
+                      type="button"
+                      onClick={onApproveAndReprocess}
+                      disabled={actionLoading}
+                      className="rounded-full bg-gradient-to-r from-cyan-500 via-sky-500 to-blue-600 px-4 py-2 text-xs font-semibold uppercase tracking-[0.16em] text-white transition hover:opacity-95 disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      Approve & Reprocess
+                    </button>
+                  ) : null}
                 </div>
                 {feedback ? <div className="mt-4 text-sm text-emerald-700">{feedback}</div> : null}
               </div>

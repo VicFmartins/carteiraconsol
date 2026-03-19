@@ -32,6 +32,8 @@ class IngestionReportRead(ORMModel):
     message: str
     created_at: datetime
     processed_at: datetime | None = None
+    reprocessed_at: datetime | None = None
+    reprocess_count: int = Field(ge=0)
 
 
 class IngestionReportReviewUpdate(ORMModel):

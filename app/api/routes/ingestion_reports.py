@@ -9,6 +9,8 @@ from app.api.dependencies import pagination_params
 from app.db.session import get_db
 from app.schemas.common import APIResponse, ListAPIResponse, PaginationParams
 from app.schemas.ingestion_report import IngestionReportRead, IngestionReportReviewUpdate
+from app.schemas.etl import UploadResponse
+from app.services.etl_service import ETLService
 from app.services.ingestion_report_service import IngestionReportService
 
 
@@ -48,3 +50,9 @@ def update_ingestion_report_review(
         approved_by=payload.approved_by,
     )
     return APIResponse(data=report)
+
+
+@router.post("/{report_id}/reprocess", response_model=APIResponse[UploadResponse])
+def reprocess_ingestion_report(report_id: int, db: Session = Depends(get_db)) -> APIResponse[UploadResponse]:
+    result = ETLService(db).reprocess_report(report_id)
+    return APIResponse(data=result)

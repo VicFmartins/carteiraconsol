@@ -377,3 +377,66 @@ def test_ingestion_reports_support_review_status_filter(api_client: TestClient) 
     payload = response.json()
     assert payload["pagination"]["total"] == 1
     assert payload["data"][0]["review_status"] == "pending"
+
+
+def test_reprocess_endpoint_rejects_pending_report(api_client: TestClient) -> None:
+    csv_content = "\n".join(
+        [
+            "Cliente do Investidor;Instituicao Financeira;Papel / Ativo;Qtde Total",
+            "Carlos Lima;XP Investimentos;Tesouro Selic 2029;2",
+        ]
+    ).encode("utf-8")
+
+    upload_response = api_client.post(
+        "/upload",
+        files={"file": ("pendente_reprocesso.csv", csv_content, "text/csv")},
+    )
+    report_id = upload_response.json()["data"]["ingestion_report_id"]
+
+    response = api_client.post(f"/ingestion-reports/{report_id}/reprocess")
+
+    assert response.status_code == 422
+    payload = response.json()
+    assert payload["status"] == "error"
+    assert payload["error_code"] == "etl_input_error"
+
+
+def test_approved_report_can_be_reprocessed_in_place(api_client: TestClient) -> None:
+    csv_content = "\n".join(
+        [
+            "Cliente do Investidor;Instituicao Financeira;Papel / Ativo;Qtde Total",
+            "Carlos Lima;XP Investimentos;Tesouro Selic 2029;2",
+        ]
+    ).encode("utf-8")
+
+    upload_response = api_client.post(
+        "/upload",
+        files={"file": ("reprocessar_layout.csv", csv_content, "text/csv")},
+    )
+    report_id = upload_response.json()["data"]["ingestion_report_id"]
+
+    review_response = api_client.patch(
+        f"/ingestion-reports/{report_id}/review",
+        json={"review_status": "approved", "approved_by": "ops@carteira.local"},
+    )
+    assert review_response.status_code == 200
+
+    reprocess_response = api_client.post(f"/ingestion-reports/{report_id}/reprocess")
+
+    assert reprocess_response.status_code == 200
+    payload = reprocess_response.json()["data"]
+    assert payload["ingestion_report_id"] == report_id
+    assert payload["reprocess_count"] == 1
+    assert payload["reprocessed_at"] is not None
+
+    detail_response = api_client.get(f"/ingestion-reports/{report_id}")
+    detail_payload = detail_response.json()["data"]
+    assert detail_payload["id"] == report_id
+    assert detail_payload["reprocess_count"] == 1
+    assert detail_payload["reprocessed_at"] is not None
+    assert detail_payload["review_status"] == "pending"
+    assert any(
+        mapping.get("matched_alias") == "accepted_mapping"
+        for mapping in detail_payload["applied_mappings"]
+        if mapping.get("accepted")
+    )

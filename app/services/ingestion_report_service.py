@@ -141,6 +141,57 @@ class IngestionReportService:
             )
         )
 
+    def update_report_from_summary(
+        self,
+        report: IngestionReport,
+        *,
+        summary: ETLFileSummary,
+        filename: str,
+        source_type: str,
+        detected_type: str,
+        message: str,
+    ) -> IngestionReport:
+        report.filename = filename
+        report.source_file = summary.source_file
+        report.source_type = source_type
+        report.detected_type = detected_type
+        report.layout_signature = summary.layout_signature or build_layout_signature(summary.detected_columns)
+        report.raw_file = str(summary.raw_file)
+        report.processed_file = str(summary.processed_file)
+        report.parser_name = summary.parser_name
+        report.detection_confidence = summary.detection_confidence
+        report.review_required = summary.review_required
+        report.review_status = "pending" if summary.review_required else "not_required"
+        report.review_reasons = list(summary.review_reasons)
+        report.detected_columns = list(summary.detected_columns)
+        report.applied_mappings = list(summary.applied_mappings)
+        report.structure_detection = summary.structure_detection or {}
+        report.rows_processed = summary.rows_processed
+        report.rows_skipped = summary.rows_skipped
+        report.status = "review_required" if summary.review_required else "success"
+        report.message = message
+        report.processed_at = datetime.now(UTC)
+        report.reprocessed_at = datetime.now(UTC)
+        report.reprocess_count += 1
+        self.db.commit()
+        self.db.refresh(report)
+        return report
+
+    def mark_reprocess_failure(self, report: IngestionReport, *, message: str) -> IngestionReport:
+        self.db.rollback()
+        persistent_report = self.get_report(report.id)
+        persistent_report.status = "error"
+        persistent_report.message = message
+        persistent_report.review_required = True
+        persistent_report.review_status = "pending"
+        persistent_report.review_reasons = ["reprocess_failed"]
+        persistent_report.processed_at = datetime.now(UTC)
+        persistent_report.reprocessed_at = datetime.now(UTC)
+        persistent_report.reprocess_count += 1
+        self.db.commit()
+        self.db.refresh(persistent_report)
+        return persistent_report
+
     def list_reports(
         self,
         *,

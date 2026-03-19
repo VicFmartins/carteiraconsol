@@ -69,6 +69,8 @@ export type UploadApi = {
   review_required?: boolean;
   review_status?: ReviewStatusApi | null;
   review_reasons?: string[];
+  reprocessed_at?: string | null;
+  reprocess_count?: number;
 };
 
 export type IngestionReportApi = {
@@ -94,6 +96,8 @@ export type IngestionReportApi = {
   message: string;
   created_at: string;
   processed_at: string | null;
+  reprocessed_at: string | null;
+  reprocess_count: number;
 };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -151,6 +155,14 @@ function assertUploadPayload(value: unknown): UploadApi {
     throw new Error("A resposta do backend trouxe 'review_reasons' em formato invalido.");
   }
 
+  if (value.reprocessed_at !== undefined && value.reprocessed_at !== null && typeof value.reprocessed_at !== "string") {
+    throw new Error("A resposta do backend trouxe 'reprocessed_at' em formato invalido.");
+  }
+
+  if (value.reprocess_count !== undefined && (typeof value.reprocess_count !== "number" || Number.isNaN(value.reprocess_count))) {
+    throw new Error("A resposta do backend trouxe 'reprocess_count' em formato invalido.");
+  }
+
   return value as UploadApi;
 }
 
@@ -159,7 +171,7 @@ function assertIngestionReportPayload(value: unknown): IngestionReportApi {
     throw new Error("A resposta do backend para relatorio de ingestao veio em formato invalido.");
   }
 
-  const requiredNumberFields = ["id", "rows_processed", "rows_skipped"] as const;
+  const requiredNumberFields = ["id", "rows_processed", "rows_skipped", "reprocess_count"] as const;
   for (const field of requiredNumberFields) {
     if (typeof value[field] !== "number" || Number.isNaN(value[field])) {
       throw new Error(`A resposta do backend nao trouxe o campo numerico '${field}' corretamente.`);
@@ -259,7 +271,9 @@ function toIngestionReport(value: IngestionReportApi) {
     status: value.status,
     message: value.message,
     createdAt: value.created_at,
-    processedAt: value.processed_at
+    processedAt: value.processed_at,
+    reprocessedAt: value.reprocessed_at,
+    reprocessCount: value.reprocess_count
   };
 }
 
@@ -357,6 +371,23 @@ export async function updateIngestionReportReview(
   }
 
   return toIngestionReport(assertIngestionReportPayload(responsePayload.data));
+}
+
+export async function reprocessIngestionReport(reportId: number) {
+  const response = await fetch(`/ingestion-reports/${reportId}/reprocess`, {
+    method: "POST"
+  });
+
+  if (!response.ok) {
+    throw new Error(await parseErrorResponse(response, "Nao foi possivel reprocessar a ingestao."));
+  }
+
+  const responsePayload: ObjectResponse<unknown> = await response.json();
+  if (!responsePayload || responsePayload.status !== "success") {
+    throw new Error("O backend respondeu sem confirmar o reprocessamento.");
+  }
+
+  return assertUploadPayload(responsePayload.data);
 }
 
 export async function fetchPortfolioSnapshot() {

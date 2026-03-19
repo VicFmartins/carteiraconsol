@@ -68,6 +68,8 @@ export type UploadSummary = {
   reviewRequired?: boolean;
   reviewStatus?: ReviewStatus | null;
   reviewReasons?: string[];
+  reprocessedAt?: string | null;
+  reprocessCount?: number;
 };
 
 export type UploadLifecycleState = "idle" | "uploading" | "processing" | "success" | "error";
@@ -117,6 +119,8 @@ export type IngestionReport = {
   message: string;
   createdAt: string;
   processedAt: string | null;
+  reprocessedAt: string | null;
+  reprocessCount: number;
 };
 
 export type BuilderState = {

@@ -74,3 +74,5 @@ class UploadResponse(BaseModel):
     review_required: bool = False
     review_status: str | None = None
     review_reasons: list[str] = Field(default_factory=list)
+    reprocessed_at: str | None = None
+    reprocess_count: int = Field(default=0, ge=0)

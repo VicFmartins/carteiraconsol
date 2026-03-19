@@ -15,6 +15,7 @@ from app.core.exceptions import ApplicationError, ETLInputError, ResourceNotFoun
 from app.db.session import session_scope
 from app.etl.extract.file_reader import discover_input_files
 from app.etl.pipeline import PortfolioETLPipeline
+from app.models.ingestion_report import IngestionReport
 from app.schemas.etl import ETLFileResult, ETLRunResponse, UploadResponse
 from app.services.ingestion_report_service import IngestionReportService, detect_ingestion_type
 
@@ -118,7 +119,56 @@ class ETLService:
             review_required=summary.review_required,
             review_status=report.review_status,
             review_reasons=list(summary.review_reasons),
+            reprocessed_at=report.reprocessed_at.isoformat() if report.reprocessed_at else None,
+            reprocess_count=report.reprocess_count,
         )
+
+    def reprocess_report(self, report_id: int) -> UploadResponse:
+        report = self.ingestion_reports.get_report(report_id)
+        if report.review_status not in {"approved", "not_required"}:
+            raise ETLInputError("Only approved or not-required ingestion reports can be reprocessed.")
+
+        source_type, source_path, s3_key = self._resolve_reprocess_source(report)
+        filename = report.filename
+
+        try:
+            summary = self.pipeline.run(
+                source_path,
+                source_type=source_type,
+                s3_key=s3_key,
+            )
+            message = f"Arquivo {filename} reprocessado com sucesso."
+            updated_report = self.ingestion_reports.update_report_from_summary(
+                report,
+                summary=summary,
+                filename=filename,
+                source_type=source_type,
+                detected_type=detect_ingestion_type(summary.source_file),
+                message=message,
+            )
+            return UploadResponse(
+                ingestion_report_id=updated_report.id,
+                filename=filename,
+                detected_type=updated_report.detected_type,
+                rows_processed=summary.rows_processed,
+                rows_skipped=summary.rows_skipped,
+                message=updated_report.message,
+                processed_at=updated_report.processed_at.isoformat() if updated_report.processed_at else datetime.now(UTC).isoformat(),
+                raw_file=str(updated_report.raw_file or ""),
+                processed_file=str(updated_report.processed_file or ""),
+                detection_confidence=summary.detection_confidence,
+                review_required=updated_report.review_required,
+                review_status=updated_report.review_status,
+                review_reasons=list(updated_report.review_reasons or []),
+                reprocessed_at=updated_report.reprocessed_at.isoformat() if updated_report.reprocessed_at else None,
+                reprocess_count=updated_report.reprocess_count,
+            )
+        except ApplicationError as exc:
+            self.ingestion_reports.mark_reprocess_failure(report, message=exc.message)
+            raise
+        except Exception as exc:
+            self.ingestion_reports.mark_reprocess_failure(report, message=str(exc) or "Unexpected reprocessing failure.")
+            raise
 
     @classmethod
     def process_uploaded_stream(cls, filename: str, file_stream: BinaryIO) -> UploadResponse:
@@ -228,6 +278,30 @@ class ETLService:
             return [self.settings.real_inputs_dir]
 
         raise ResourceNotFoundError("No supported input files were found in data/raw, data/samples, or data/real_inputs.")
+
+    def _resolve_reprocess_source(self, report: IngestionReport) -> tuple[str, Path | None, str | None]:
+        for reference in [report.raw_file, report.source_file]:
+            if not reference:
+                continue
+            if reference.startswith("s3://"):
+                return "s3", None, self._extract_s3_key(reference)
+
+            candidate = Path(reference).expanduser()
+            if candidate.exists():
+                return "local", candidate.resolve(), None
+
+        raise ResourceNotFoundError(
+            f"Unable to locate a durable source to reprocess ingestion report {report.id}. "
+            "Expected a local raw file path or an s3:// reference."
+        )
+
+    @staticmethod
+    def _extract_s3_key(source_uri: str) -> str:
+        _, _, remainder = source_uri.partition("s3://")
+        bucket, _, key = remainder.partition("/")
+        if not bucket or not key:
+            raise ETLInputError(f"Invalid S3 source reference for reprocessing: {source_uri}")
+        return key
 
     @staticmethod
     def _detect_uploaded_type(path: Path) -> str:

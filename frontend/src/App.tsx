@@ -4,7 +4,13 @@ import ReportCanvas from "./components/ReportCanvas";
 import ReviewQueueWorkspace from "./components/ReviewQueueWorkspace";
 import Sidebar from "./components/Sidebar";
 import { mockPortfolioRecords } from "./data/mockReport";
-import { fetchIngestionReport, fetchIngestionReports, updateIngestionReportReview, uploadPortfolioFile } from "./lib/api";
+import {
+  fetchIngestionReport,
+  fetchIngestionReports,
+  reprocessIngestionReport,
+  updateIngestionReportReview,
+  uploadPortfolioFile
+} from "./lib/api";
 import { buildReport, loadLiveRecords } from "./lib/reportBuilder";
 import type {
   ApiStatus,
@@ -273,7 +279,9 @@ export default function App() {
         detectionConfidence: uploadResult.detection_confidence ?? null,
         reviewRequired: uploadResult.review_required ?? false,
         reviewStatus: uploadResult.review_status ?? null,
-        reviewReasons: uploadResult.review_reasons ?? []
+        reviewReasons: uploadResult.review_reasons ?? [],
+        reprocessedAt: uploadResult.reprocessed_at ?? null,
+        reprocessCount: uploadResult.reprocess_count ?? 0
       };
       setUploadSummary(latestSummary);
       appendUploadHistory(buildHistoryItem(latestSummary, "success"));
@@ -368,6 +376,41 @@ export default function App() {
     }
   }
 
+  async function handleApproveAndReprocess() {
+    if (!selectedReviewReport) {
+      return;
+    }
+
+    setReviewActionLoading(true);
+    setReviewError(null);
+    setReviewFeedback(null);
+
+    try {
+      let workingReport = selectedReviewReport;
+      if (workingReport.reviewStatus !== "approved") {
+        workingReport = await updateIngestionReportReview(workingReport.id, {
+          reviewStatus: "approved"
+        });
+        setSelectedReviewReport(workingReport);
+      }
+
+      const reprocessResult = await reprocessIngestionReport(workingReport.id);
+      const refreshedReport = await fetchIngestionReport(workingReport.id);
+      setSelectedReviewReport(refreshedReport);
+      setReviewFeedback(
+        `Relatorio #${refreshedReport.id} reprocessado com sucesso. ${reprocessResult.rows_processed} linhas processadas.`
+      );
+      await loadReviewQueue(reviewFilter, {
+        preferredReportId: refreshedReport.id,
+        fallbackSelected: refreshedReport
+      });
+    } catch (error) {
+      setReviewError(error instanceof Error ? error.message : "Nao foi possivel aprovar e reprocessar a ingestao.");
+    } finally {
+      setReviewActionLoading(false);
+    }
+  }
+
   function handleGeneratePdf() {
     if (!report) {
       setLastError("Gere uma previa antes de exportar o relatorio em PDF.");
@@ -422,6 +465,7 @@ export default function App() {
               onRefresh={() => void loadReviewQueue(reviewFilter)}
               onSelectReport={(reportId) => void handleSelectReviewReport(reportId)}
               onReviewAction={(status) => void handleReviewAction(status)}
+              onApproveAndReprocess={() => void handleApproveAndReprocess()}
             />
           ) : !report ? (
             <EmptyState
