@@ -14,6 +14,7 @@ load_dotenv(ENV_FILE)
 
 VALID_LOG_LEVELS = {"CRITICAL", "ERROR", "WARNING", "INFO", "DEBUG"}
 VALID_STORAGE_MODES = {"local", "s3"}
+VALID_ALERT_PROVIDERS = {"noop", "log", "sns"}
 
 
 def _get_env(name: str, default: str) -> str:
@@ -55,6 +56,9 @@ class Settings:
     jwt_secret_key: str
     jwt_algorithm: str
     jwt_access_token_expire_minutes: int
+    alerts_enabled: bool
+    alert_provider: str
+    alert_sns_topic_arn: str
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -71,6 +75,12 @@ class Settings:
         jwt_access_token_expire_minutes = _get_int_env("JWT_ACCESS_TOKEN_EXPIRE_MINUTES", 60)
         if jwt_access_token_expire_minutes <= 0:
             raise ValueError("JWT_ACCESS_TOKEN_EXPIRE_MINUTES must be greater than zero.")
+
+        alert_provider = _get_env("ALERT_PROVIDER", "noop").lower()
+        if alert_provider not in VALID_ALERT_PROVIDERS:
+            raise ValueError(
+                f"Invalid ALERT_PROVIDER '{alert_provider}'. Expected one of: {sorted(VALID_ALERT_PROVIDERS)}"
+            )
 
         return cls(
             project_name=_get_env("PROJECT_NAME", "CarteiraConsol"),
@@ -98,6 +108,9 @@ class Settings:
             jwt_secret_key=_get_env("JWT_SECRET_KEY", "change-me-before-production"),
             jwt_algorithm=_get_env("JWT_ALGORITHM", "HS256"),
             jwt_access_token_expire_minutes=jwt_access_token_expire_minutes,
+            alerts_enabled=_get_bool_env("ALERTS_ENABLED", False),
+            alert_provider=alert_provider,
+            alert_sns_topic_arn=_get_env("ALERT_SNS_TOPIC_ARN", ""),
         )
 
     @property

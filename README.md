@@ -220,6 +220,9 @@ API_PREFIX=
 JWT_SECRET_KEY=change-me-before-production
 JWT_ALGORITHM=HS256
 JWT_ACCESS_TOKEN_EXPIRE_MINUTES=60
+ALERTS_ENABLED=false
+ALERT_PROVIDER=noop
+ALERT_SNS_TOPIC_ARN=
 ```
 
 `AUTO_CREATE_TABLES` existe como conveniência para desenvolvimento local. Em ambientes compartilhados ou de produção, prefira deixá-lo como `false` e aplicar mudanças de schema via migrações explícitas e revisadas.
@@ -743,6 +746,35 @@ Também é possível usar fixtures locais:
 python scripts/invoke_lambda_etl.py --payload-file "tests/fixtures/lambda_s3_event.json"
 python scripts/invoke_lambda_etl.py --payload-file "tests/fixtures/lambda_sqs_s3_event.json"
 ```
+
+### Alertas operacionais
+
+O backend agora pode emitir alertas operacionais quando uma ingestão exige atenção humana.
+
+Casos cobertos nesta primeira camada:
+
+- falha técnica de ingestão
+- ingestão concluída com `review_required=true`
+
+Estratégia inicial:
+
+- local/dev: `ALERTS_ENABLED=false` ou `ALERT_PROVIDER=noop`
+- ambientes compartilhados: `ALERT_PROVIDER=log` para visibilidade imediata
+- AWS/produção: `ALERT_PROVIDER=sns` com `ALERT_SNS_TOPIC_ARN`
+
+Campos principais enviados no payload do alerta:
+
+- `ingestion_report_id`
+- `filename`
+- `source_type`
+- `status`
+- `review_status`
+- `review_reasons`
+- `detection_confidence`
+- `raw_file`
+- `processed_at`
+
+Falhas de envio de alerta não interrompem o ETL. O pipeline continua concluindo ou falhando de acordo com a regra original, enquanto o backend registra o problema de notificação em log.
 
 O que ainda fica para a próxima etapa de AWS real:
 

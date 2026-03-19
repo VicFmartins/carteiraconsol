@@ -111,12 +111,16 @@ Important values:
 - `JWT_SECRET_KEY`
 - `JWT_ALGORITHM`
 - `JWT_ACCESS_TOKEN_EXPIRE_MINUTES`
+- `ALERTS_ENABLED`
+- `ALERT_PROVIDER`
+- `ALERT_SNS_TOPIC_ARN`
 - `AUTO_CREATE_TABLES=false`
 
 Recommended secret handling:
 
 - store `DATABASE_URL` in Secrets Manager or SSM SecureString
 - store `JWT_SECRET_KEY` in Secrets Manager or SSM SecureString
+- store `ALERT_SNS_TOPIC_ARN` in Parameter Store or config management if the topic is managed outside the app stack
 - do not inject static AWS keys into ECS or Lambda if IAM roles are available
 
 In AWS:
@@ -155,6 +159,43 @@ Operationally useful metadata remains available:
 - parser used
 - confidence / review metadata
 - processed rows / skipped rows
+
+## Operational Alerts
+
+CarteiraConsol is now prepared to emit first-line operational alerts for ingestion runs that require attention.
+
+Current alert triggers:
+
+- ingestion technical failure
+- ingestion completed with `review_required=true`
+
+Recommended production path:
+
+- publish alerts to Amazon SNS
+- subscribe operator email lists first
+- add downstream channels later if needed
+
+Why SNS first:
+
+- simple and reliable
+- email-friendly out of the box
+- easy to fan out later to Lambda, HTTP, or incident tooling
+
+Suggested production configuration:
+
+- `ALERTS_ENABLED=true`
+- `ALERT_PROVIDER=sns`
+- `ALERT_SNS_TOPIC_ARN=arn:aws:sns:...`
+
+Important behavior:
+
+- alert delivery is best-effort
+- SNS publish failures are logged
+- ingestion success or failure is not blocked by alert delivery problems
+
+Future extension point:
+
+- WhatsApp or other operator channels can be added behind the same alert service without changing the ETL orchestration path
 
 ## SAM Baseline Included
 
