@@ -661,6 +661,8 @@ http://localhost:3001
 
 O projeto já está preparado para evolução cloud-native.
 
+Para a trilha de implantação em AWS, consulte também [aws-deployment.md](C:/Users/vitor/OneDrive/Documentos/Playground/docs/aws-deployment.md), [.env.aws.example](C:/Users/vitor/OneDrive/Documentos/Playground/.env.aws.example), [template.yaml](C:/Users/vitor/OneDrive/Documentos/Playground/template.yaml) e [ecs-task-definition.sample.json](C:/Users/vitor/OneDrive/Documentos/Playground/deploy/ecs-task-definition.sample.json).
+
 ### S3
 
 Suporte implementado para:
