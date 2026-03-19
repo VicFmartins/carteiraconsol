@@ -19,6 +19,8 @@ type SidebarProps = {
   uploadSummary: UploadSummary | null;
   uploadHistory: UploadHistoryItem[];
   lastError: string | null;
+  currentUserName: string;
+  currentUserEmail: string;
   onClientNameChange: (value: string) => void;
   onDiagnosisChange: (value: string) => void;
   onWorkspaceViewChange: (value: WorkspaceView) => void;
@@ -26,6 +28,7 @@ type SidebarProps = {
   onDownloadTemplate: () => void;
   onUploadSpreadsheet: () => void;
   onGeneratePdf: () => void;
+  onLogout: () => void;
 };
 
 function ActionButton({
@@ -276,13 +279,16 @@ export default function Sidebar({
   uploadSummary,
   uploadHistory,
   lastError,
+  currentUserName,
+  currentUserEmail,
   onClientNameChange,
   onDiagnosisChange,
   onWorkspaceViewChange,
   onFillMockData,
   onDownloadTemplate,
   onUploadSpreadsheet,
-  onGeneratePdf
+  onGeneratePdf,
+  onLogout
 }: SidebarProps) {
   const uploadBusy = uploadState === "uploading" || uploadState === "processing";
 
@@ -308,6 +314,23 @@ export default function Sidebar({
           reviewQueueCount={reviewQueueCount}
           onWorkspaceViewChange={onWorkspaceViewChange}
         />
+
+        <div className="mt-6 rounded-[24px] border border-white/8 bg-white/[0.03] p-4">
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Sessao autenticada</p>
+              <p className="mt-2 text-sm font-semibold text-white">{currentUserName}</p>
+              <p className="mt-1 text-xs text-slate-500">{currentUserEmail}</p>
+            </div>
+            <button
+              type="button"
+              onClick={onLogout}
+              className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-200 transition hover:bg-white/[0.08]"
+            >
+              Logout
+            </button>
+          </div>
+        </div>
 
         <div className="mt-8 rounded-[24px] border border-white/8 bg-white/[0.03] p-4">
           <div className="flex items-center justify-between gap-3">

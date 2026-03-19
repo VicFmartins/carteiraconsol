@@ -4,6 +4,7 @@ from app.models.asset_master import AssetMaster
 from app.models.client import Client
 from app.models.ingestion_report import IngestionReport
 from app.models.position_history import PositionHistory
+from app.models.user import User
 
 __all__ = [
     "Client",
@@ -12,4 +13,5 @@ __all__ = [
     "AssetMaster",
     "PositionHistory",
     "IngestionReport",
+    "User",
 ]

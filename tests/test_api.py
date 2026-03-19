@@ -21,11 +21,13 @@ from app.models.asset_master import AssetMaster
 from app.models.client import Client
 from app.models.ingestion_report import IngestionReport
 from app.models.position_history import PositionHistory
+from app.models.user import User
 from app.api.routes import upload as upload_route_module
 from app.etl.detect.column_mapper import FuzzyColumnMapper
 from app.etl.extract.file_reader import FileReader
 from app.schemas.etl import UploadResponse
 from app.services.accepted_mapping_service import AcceptedMappingService
+from app.services.auth_service import AuthService
 from app.services.etl_service import ETLService
 
 
@@ -34,6 +36,7 @@ def api_client(tmp_path, monkeypatch):
     database_path = tmp_path / "api_test.db"
     monkeypatch.setenv("DATABASE_URL", f"sqlite:///{database_path}")
     monkeypatch.setenv("AUTO_CREATE_TABLES", "false")
+    monkeypatch.setenv("JWT_SECRET_KEY", "test-secret-key")
 
     engine = create_engine(f"sqlite:///{database_path}", connect_args={"check_same_thread": False})
     TestingSessionLocal = sessionmaker(bind=engine, autocommit=False, autoflush=False, expire_on_commit=False)
@@ -41,6 +44,12 @@ def api_client(tmp_path, monkeypatch):
 
     session: Session = TestingSessionLocal()
     try:
+        AuthService(session).create_user(
+            email="admin@carteira.local",
+            password="super-secret",
+            full_name="Admin Local",
+            is_admin=True,
+        )
         client_1 = Client(name="Ana Costa", risk_profile="arrojado")
         client_2 = Client(name="Maria Oliveira", risk_profile="moderado")
         session.add_all([client_1, client_2])
@@ -106,9 +115,86 @@ def api_client(tmp_path, monkeypatch):
 
     app.dependency_overrides[get_db] = override_get_db
     with TestClient(app) as client:
+        login_response = client.post(
+            "/auth/login",
+            json={"email": "admin@carteira.local", "password": "super-secret"},
+        )
+        token = login_response.json()["data"]["access_token"]
+        client.headers.update({"Authorization": f"Bearer {token}"})
         yield client
     app.dependency_overrides.clear()
     engine.dispose()
+
+
+@pytest.fixture
+def unauthenticated_api_client(tmp_path, monkeypatch):
+    database_path = tmp_path / "api_public_test.db"
+    monkeypatch.setenv("DATABASE_URL", f"sqlite:///{database_path}")
+    monkeypatch.setenv("AUTO_CREATE_TABLES", "false")
+    monkeypatch.setenv("JWT_SECRET_KEY", "test-secret-key")
+
+    engine = create_engine(f"sqlite:///{database_path}", connect_args={"check_same_thread": False})
+    TestingSessionLocal = sessionmaker(bind=engine, autocommit=False, autoflush=False, expire_on_commit=False)
+    Base.metadata.create_all(bind=engine)
+
+    session: Session = TestingSessionLocal()
+    try:
+        AuthService(session).create_user(
+            email="admin@carteira.local",
+            password="super-secret",
+            full_name="Admin Local",
+            is_admin=True,
+        )
+        session.commit()
+    finally:
+        session.close()
+
+    app = create_app()
+
+    def override_get_db():
+        db = TestingSessionLocal()
+        try:
+            yield db
+        finally:
+            db.close()
+
+    app.dependency_overrides[get_db] = override_get_db
+    with TestClient(app) as client:
+        yield client
+    app.dependency_overrides.clear()
+    engine.dispose()
+
+
+def test_login_returns_a_jwt_and_me_returns_the_authenticated_user(unauthenticated_api_client: TestClient) -> None:
+    login_response = unauthenticated_api_client.post(
+        "/auth/login",
+        json={"email": "admin@carteira.local", "password": "super-secret"},
+    )
+
+    assert login_response.status_code == 200
+    payload = login_response.json()["data"]
+    assert payload["token_type"] == "bearer"
+    assert payload["access_token"]
+    assert payload["user"]["email"] == "admin@carteira.local"
+
+    me_response = unauthenticated_api_client.get(
+        "/auth/me",
+        headers={"Authorization": f"Bearer {payload['access_token']}"},
+    )
+
+    assert me_response.status_code == 200
+    me_payload = me_response.json()["data"]
+    assert me_payload["email"] == "admin@carteira.local"
+    assert me_payload["is_admin"] is True
+
+
+def test_protected_routes_require_authentication(unauthenticated_api_client: TestClient) -> None:
+    response = unauthenticated_api_client.get("/clients")
+
+    assert response.status_code == 401
+    payload = response.json()
+    assert payload["status"] == "error"
+    assert payload["error_code"] == "authentication_error"
 
 
 def test_clients_endpoint_supports_pagination_and_filtering(api_client: TestClient) -> None:

@@ -28,3 +28,13 @@ class UploadTooLargeError(ApplicationError):
 class S3OperationError(ApplicationError):
     def __init__(self, message: str) -> None:
         super().__init__(message, error_code="s3_operation_error")
+
+
+class AuthenticationError(ApplicationError):
+    def __init__(self, message: str = "Authentication required.") -> None:
+        super().__init__(message, error_code="authentication_error")
+
+
+class AuthorizationError(ApplicationError):
+    def __init__(self, message: str = "You do not have permission to perform this action.") -> None:
+        super().__init__(message, error_code="authorization_error")

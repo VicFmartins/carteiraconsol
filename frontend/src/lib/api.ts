@@ -1,3 +1,6 @@
+import { emitUnauthorizedSession, getStoredAccessToken } from "./auth";
+import type { AuthSession, AuthenticatedUser } from "../types/auth";
+
 type PaginatedResponse<T> = {
   status: string;
   data: T[];
@@ -22,6 +25,22 @@ type ErrorResponse = {
 };
 
 type ReviewStatusApi = "pending" | "approved" | "rejected" | "not_required";
+
+type UserApi = {
+  id: number;
+  email: string;
+  full_name: string | null;
+  is_active: boolean;
+  is_admin: boolean;
+  created_at: string;
+};
+
+type LoginApi = {
+  access_token: string;
+  token_type: string;
+  expires_at: string;
+  user: UserApi;
+};
 
 export type ClientApi = {
   id: number;
@@ -107,6 +126,18 @@ export type IngestionReportApi = {
   reprocess_count: number;
 };
 
+export class ApiRequestError extends Error {
+  statusCode: number;
+  errorCode?: string;
+
+  constructor(message: string, statusCode: number, errorCode?: string) {
+    super(message);
+    this.name = "ApiRequestError";
+    this.statusCode = statusCode;
+    this.errorCode = errorCode;
+  }
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
 }
@@ -121,6 +152,56 @@ function buildPath(path: string, params?: Record<string, string | number | boole
 
   const queryString = searchParams.toString();
   return queryString ? `${path}?${queryString}` : path;
+}
+
+function assertUserPayload(value: unknown): UserApi {
+  if (!isRecord(value)) {
+    throw new Error("A resposta do backend para usuario veio em formato invalido.");
+  }
+
+  const requiredNumberFields = ["id"] as const;
+  for (const field of requiredNumberFields) {
+    if (typeof value[field] !== "number" || Number.isNaN(value[field])) {
+      throw new Error(`A resposta do backend nao trouxe o campo numerico '${field}' corretamente.`);
+    }
+  }
+
+  const requiredStringFields = ["email", "created_at"] as const;
+  for (const field of requiredStringFields) {
+    if (typeof value[field] !== "string" || !value[field]) {
+      throw new Error(`A resposta do backend nao trouxe o campo obrigatorio '${field}'.`);
+    }
+  }
+
+  if (value.full_name !== null && value.full_name !== undefined && typeof value.full_name !== "string") {
+    throw new Error("A resposta do backend trouxe 'full_name' em formato invalido.");
+  }
+
+  if (typeof value.is_active !== "boolean" || typeof value.is_admin !== "boolean") {
+    throw new Error("A resposta do backend trouxe flags de usuario em formato invalido.");
+  }
+
+  return value as UserApi;
+}
+
+function assertLoginPayload(value: unknown): LoginApi {
+  if (!isRecord(value)) {
+    throw new Error("A resposta do backend para login veio em formato invalido.");
+  }
+
+  const requiredStringFields = ["access_token", "token_type", "expires_at"] as const;
+  for (const field of requiredStringFields) {
+    if (typeof value[field] !== "string" || !value[field]) {
+      throw new Error(`A resposta do backend nao trouxe o campo obrigatorio '${field}'.`);
+    }
+  }
+
+  return {
+    access_token: String(value.access_token),
+    token_type: String(value.token_type),
+    expires_at: String(value.expires_at),
+    user: assertUserPayload(value.user)
+  };
 }
 
 function assertUploadPayload(value: unknown): UploadApi {
@@ -219,13 +300,58 @@ function assertIngestionReportPayload(value: unknown): IngestionReportApi {
   return value as IngestionReportApi;
 }
 
-async function parseErrorResponse(response: Response, fallbackMessage: string): Promise<string> {
+function toAuthenticatedUser(value: UserApi): AuthenticatedUser {
+  return {
+    id: value.id,
+    email: value.email,
+    fullName: value.full_name,
+    isActive: value.is_active,
+    isAdmin: value.is_admin,
+    createdAt: value.created_at
+  };
+}
+
+function toAuthSession(value: LoginApi): AuthSession {
+  return {
+    accessToken: value.access_token,
+    tokenType: value.token_type,
+    expiresAt: value.expires_at,
+    user: toAuthenticatedUser(value.user)
+  };
+}
+
+async function parseErrorResponse(response: Response, fallbackMessage: string): Promise<{ message: string; errorCode?: string }> {
   try {
     const payload: ErrorResponse = await response.json();
-    return payload.detail || fallbackMessage;
+    return {
+      message: payload.detail || fallbackMessage,
+      errorCode: payload.error_code
+    };
   } catch {
-    return fallbackMessage;
+    return { message: fallbackMessage };
   }
+}
+
+async function apiFetch(path: string, init: RequestInit = {}) {
+  const headers = new Headers(init.headers ?? undefined);
+  const token = getStoredAccessToken();
+
+  if (token && !headers.has("Authorization")) {
+    headers.set("Authorization", `Bearer ${token}`);
+  }
+
+  return fetch(path, {
+    ...init,
+    headers
+  });
+}
+
+async function throwApiError(response: Response, fallbackMessage: string): Promise<never> {
+  const { message, errorCode } = await parseErrorResponse(response, fallbackMessage);
+  if (response.status === 401 && getStoredAccessToken()) {
+    emitUnauthorizedSession();
+  }
+  throw new ApiRequestError(message, response.status, errorCode);
 }
 
 async function fetchPaginated<T>(path: string): Promise<T[]> {
@@ -234,9 +360,9 @@ async function fetchPaginated<T>(path: string): Promise<T[]> {
   const limit = 100;
 
   while (true) {
-    const response = await fetch(`${path}${path.includes("?") ? "&" : "?"}offset=${offset}&limit=${limit}`);
+    const response = await apiFetch(`${path}${path.includes("?") ? "&" : "?"}offset=${offset}&limit=${limit}`);
     if (!response.ok) {
-      throw new Error(`Falha ao consultar ${path}`);
+      await throwApiError(response, `Falha ao consultar ${path}`);
     }
 
     const payload: PaginatedResponse<T> = await response.json();
@@ -245,7 +371,6 @@ async function fetchPaginated<T>(path: string): Promise<T[]> {
     }
 
     items.push(...payload.data);
-
     if (!payload.pagination.has_more) {
       break;
     }
@@ -284,13 +409,53 @@ function toIngestionReport(value: IngestionReportApi) {
   };
 }
 
+export async function loginWithPassword(email: string, password: string): Promise<AuthSession> {
+  let response: Response;
+  try {
+    response = await apiFetch("/auth/login", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({ email, password })
+    });
+  } catch {
+    throw new Error("Nao foi possivel conectar ao backend para validar suas credenciais.");
+  }
+
+  if (!response.ok) {
+    await throwApiError(response, "Nao foi possivel autenticar o usuario informado.");
+  }
+
+  const payload: ObjectResponse<unknown> = await response.json();
+  if (!payload || payload.status !== "success") {
+    throw new Error("O backend respondeu ao login sem confirmar sucesso.");
+  }
+
+  return toAuthSession(assertLoginPayload(payload.data));
+}
+
+export async function fetchCurrentUser(): Promise<AuthenticatedUser> {
+  const response = await apiFetch("/auth/me");
+  if (!response.ok) {
+    await throwApiError(response, "Nao foi possivel validar a sessao atual.");
+  }
+
+  const payload: ObjectResponse<unknown> = await response.json();
+  if (!payload || payload.status !== "success") {
+    throw new Error("O backend respondeu sem confirmar a sessao autenticada.");
+  }
+
+  return toAuthenticatedUser(assertUserPayload(payload.data));
+}
+
 export async function uploadPortfolioFile(file: File): Promise<UploadApi> {
   const formData = new FormData();
   formData.append("file", file);
 
   let response: Response;
   try {
-    response = await fetch("/upload", {
+    response = await apiFetch("/upload", {
       method: "POST",
       body: formData
     });
@@ -303,7 +468,7 @@ export async function uploadPortfolioFile(file: File): Promise<UploadApi> {
       response.status >= 500
         ? "O backend nao conseguiu concluir o processamento do arquivo."
         : "O upload foi recusado. Revise o arquivo e tente novamente.";
-    throw new Error(await parseErrorResponse(response, fallbackMessage));
+    await throwApiError(response, fallbackMessage);
   }
 
   const payload: ObjectResponse<unknown> = await response.json();
@@ -319,7 +484,7 @@ export async function fetchIngestionReports(filters?: {
   reviewStatus?: ReviewStatusApi;
   limit?: number;
 }) {
-  const response = await fetch(
+  const response = await apiFetch(
     buildPath("/ingestion-reports", {
       review_required: filters?.reviewRequired,
       review_status: filters?.reviewStatus,
@@ -328,7 +493,7 @@ export async function fetchIngestionReports(filters?: {
   );
 
   if (!response.ok) {
-    throw new Error(await parseErrorResponse(response, "Nao foi possivel carregar a fila de revisao."));
+    await throwApiError(response, "Nao foi possivel carregar a fila de revisao.");
   }
 
   const payload: PaginatedResponse<unknown> = await response.json();
@@ -340,9 +505,9 @@ export async function fetchIngestionReports(filters?: {
 }
 
 export async function fetchIngestionReport(reportId: number) {
-  const response = await fetch(`/ingestion-reports/${reportId}`);
+  const response = await apiFetch(`/ingestion-reports/${reportId}`);
   if (!response.ok) {
-    throw new Error(await parseErrorResponse(response, "Nao foi possivel carregar o detalhe da revisao."));
+    await throwApiError(response, "Nao foi possivel carregar o detalhe da revisao.");
   }
 
   const payload: ObjectResponse<unknown> = await response.json();
@@ -357,7 +522,7 @@ export async function updateIngestionReportReview(
   reportId: number,
   payload: { reviewStatus: ReviewStatusApi; approvedBy?: string }
 ) {
-  const response = await fetch(`/ingestion-reports/${reportId}/review`, {
+  const response = await apiFetch(`/ingestion-reports/${reportId}/review`, {
     method: "PATCH",
     headers: {
       "Content-Type": "application/json"
@@ -369,7 +534,7 @@ export async function updateIngestionReportReview(
   });
 
   if (!response.ok) {
-    throw new Error(await parseErrorResponse(response, "Nao foi possivel atualizar o status da revisao."));
+    await throwApiError(response, "Nao foi possivel atualizar o status da revisao.");
   }
 
   const responsePayload: ObjectResponse<unknown> = await response.json();
@@ -381,12 +546,12 @@ export async function updateIngestionReportReview(
 }
 
 export async function reprocessIngestionReport(reportId: number) {
-  const response = await fetch(`/ingestion-reports/${reportId}/reprocess`, {
+  const response = await apiFetch(`/ingestion-reports/${reportId}/reprocess`, {
     method: "POST"
   });
 
   if (!response.ok) {
-    throw new Error(await parseErrorResponse(response, "Nao foi possivel reprocessar a ingestao."));
+    await throwApiError(response, "Nao foi possivel reprocessar a ingestao.");
   }
 
   const responsePayload: ObjectResponse<unknown> = await response.json();

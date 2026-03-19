@@ -217,6 +217,9 @@ DEFAULT_RISK_PROFILE=moderado
 RAW_STORAGE_MODE=local
 AUTO_CREATE_TABLES=true
 API_PREFIX=
+JWT_SECRET_KEY=change-me-before-production
+JWT_ALGORITHM=HS256
+JWT_ACCESS_TOKEN_EXPIRE_MINUTES=60
 ```
 
 `AUTO_CREATE_TABLES` existe como conveniência para desenvolvimento local. Em ambientes compartilhados ou de produção, prefira deixá-lo como `false` e aplicar mudanças de schema via migrações explícitas e revisadas.
@@ -241,6 +244,12 @@ Se o banco `etl_db` ainda não existir:
 ```powershell
 python scripts/ensure_postgres_db.py
 python scripts/init_db.py
+```
+
+Se voce ja vinha usando a base local antes do Alembic e ela foi criada por `AUTO_CREATE_TABLES`, faca um alinhamento unico do historico antes de aplicar novas migrations:
+
+```powershell
+alembic stamp head
 ```
 
 ### 5.1. Aplicar migrações com Alembic
@@ -286,6 +295,16 @@ Swagger:
 ```text
 http://127.0.0.1:8000/docs
 ```
+
+### 6.1. Criar o primeiro admin
+
+Antes de usar o frontend autenticado, crie um usuario administrador local:
+
+```powershell
+python scripts/create_admin.py --email seu@email.com --full-name "Seu Nome"
+```
+
+Se preferir, omita `--password` para informar a senha de forma interativa.
 
 ### 7. Instalar e Rodar o Frontend
 
@@ -377,6 +396,13 @@ Fluxo validado localmente com essa stack:
 
 ```http
 GET /health
+```
+
+#### Autenticacao
+
+```http
+POST /auth/login
+GET /auth/me
 ```
 
 #### Upload e Processamento

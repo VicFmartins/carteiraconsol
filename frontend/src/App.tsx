@@ -1,9 +1,11 @@
 import { useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
 import DashboardWorkspace from "./components/DashboardWorkspace";
 import EmptyState from "./components/EmptyState";
+import LoginScreen from "./components/LoginScreen";
 import ReportCanvas from "./components/ReportCanvas";
 import ReviewQueueWorkspace from "./components/ReviewQueueWorkspace";
 import Sidebar from "./components/Sidebar";
+import { useAuth } from "./contexts/AuthContext";
 import { mockPortfolioRecords } from "./data/mockReport";
 import {
   fetchPortfolioSnapshot,
@@ -71,6 +73,7 @@ function sortReviewReports(reports: IngestionReport[]) {
 }
 
 export default function App() {
+  const { user, isAuthenticated, loading: authLoading, login, logout } = useAuth();
   const [clientName, setClientName] = useState("");
   const [diagnosis, setDiagnosis] = useState("");
   const [records, setRecords] = useState<PortfolioRecord[] | null>(null);
@@ -248,19 +251,28 @@ export default function App() {
   }
 
   useEffect(() => {
+    if (!isAuthenticated) {
+      return;
+    }
     void loadReviewQueue("pending", { silent: true });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [isAuthenticated]);
 
   useEffect(() => {
+    if (!isAuthenticated) {
+      return;
+    }
     if (workspaceView !== "review") {
       return;
     }
     void loadReviewQueue(reviewFilter);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [workspaceView, reviewFilter]);
+  }, [isAuthenticated, workspaceView, reviewFilter]);
 
   useEffect(() => {
+    if (!isAuthenticated) {
+      return;
+    }
     if (workspaceView !== "dashboard") {
       return;
     }
@@ -269,7 +281,7 @@ export default function App() {
     }
     void loadDashboardSnapshot();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [workspaceView, dashboardSnapshot]);
+  }, [dashboardSnapshot, isAuthenticated, workspaceView]);
 
   function handleFillMockData() {
     setUploadName(null);
@@ -493,6 +505,20 @@ export default function App() {
     });
   }
 
+  if (authLoading) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-[radial-gradient(circle_at_top,rgba(34,211,238,0.10),transparent_28%),linear-gradient(180deg,#07101f_0%,#081320_100%)] px-6 py-8 text-slate-200">
+        <div className="rounded-[28px] border border-white/8 bg-white/[0.03] px-8 py-6 shadow-soft">
+          Validando sessao segura do workspace...
+        </div>
+      </div>
+    );
+  }
+
+  if (!isAuthenticated) {
+    return <LoginScreen loading={authLoading} onLogin={login} />;
+  }
+
   return (
     <div className="min-h-screen px-4 py-4 md:px-6 lg:px-8">
       <div className="mx-auto grid min-h-[calc(100vh-2rem)] max-w-[1680px] gap-4 lg:grid-cols-[360px_minmax(0,1fr)]">
@@ -516,6 +542,8 @@ export default function App() {
           uploadSummary={uploadSummary}
           uploadHistory={uploadHistory}
           lastError={lastError}
+          currentUserName={user?.fullName ?? "Workspace User"}
+          currentUserEmail={user?.email ?? ""}
           onClientNameChange={setClientName}
           onDiagnosisChange={setDiagnosis}
           onWorkspaceViewChange={setWorkspaceView}
@@ -523,6 +551,7 @@ export default function App() {
           onDownloadTemplate={handleDownloadTemplate}
           onUploadSpreadsheet={handleSelectUpload}
           onGeneratePdf={handleGeneratePdf}
+          onLogout={logout}
         />
 
         <main className="min-w-0">

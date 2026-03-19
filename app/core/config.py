@@ -27,6 +27,13 @@ def _get_bool_env(name: str, default: bool) -> bool:
     return raw_value.strip().lower() in {"1", "true", "yes", "on"}
 
 
+def _get_int_env(name: str, default: int) -> int:
+    raw_value = os.getenv(name)
+    if raw_value is None:
+        return default
+    return int(raw_value.strip())
+
+
 @dataclass(frozen=True, slots=True)
 class Settings:
     project_name: str
@@ -45,6 +52,9 @@ class Settings:
     raw_storage_mode: str
     auto_create_tables: bool
     api_prefix: str
+    jwt_secret_key: str
+    jwt_algorithm: str
+    jwt_access_token_expire_minutes: int
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -57,6 +67,10 @@ class Settings:
             raise ValueError(
                 f"Invalid RAW_STORAGE_MODE '{raw_storage_mode}'. Expected one of: {sorted(VALID_STORAGE_MODES)}"
             )
+
+        jwt_access_token_expire_minutes = _get_int_env("JWT_ACCESS_TOKEN_EXPIRE_MINUTES", 60)
+        if jwt_access_token_expire_minutes <= 0:
+            raise ValueError("JWT_ACCESS_TOKEN_EXPIRE_MINUTES must be greater than zero.")
 
         return cls(
             project_name=_get_env("PROJECT_NAME", "CarteiraConsol"),
@@ -81,6 +95,9 @@ class Settings:
             raw_storage_mode=raw_storage_mode,
             auto_create_tables=_get_bool_env("AUTO_CREATE_TABLES", True),
             api_prefix=_get_env("API_PREFIX", ""),
+            jwt_secret_key=_get_env("JWT_SECRET_KEY", "change-me-before-production"),
+            jwt_algorithm=_get_env("JWT_ALGORITHM", "HS256"),
+            jwt_access_token_expire_minutes=jwt_access_token_expire_minutes,
         )
 
     @property

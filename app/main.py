@@ -45,12 +45,17 @@ def create_app() -> FastAPI:
     async def application_error_handler(_: Request, exc: ApplicationError) -> JSONResponse:
         if exc.error_code == "resource_not_found":
             status_code = 404
+        elif exc.error_code == "authentication_error":
+            status_code = 401
+        elif exc.error_code == "authorization_error":
+            status_code = 403
         elif exc.error_code == "upload_too_large":
             status_code = 413
         else:
             status_code = 422
         payload = ErrorResponse(detail=exc.message, error_code=exc.error_code)
-        return JSONResponse(status_code=status_code, content=payload.model_dump())
+        headers = {"WWW-Authenticate": "Bearer"} if status_code == 401 else None
+        return JSONResponse(status_code=status_code, content=payload.model_dump(), headers=headers)
 
     @app.exception_handler(RequestValidationError)
     async def request_validation_error_handler(_: Request, exc: RequestValidationError) -> JSONResponse:
