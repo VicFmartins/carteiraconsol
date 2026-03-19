@@ -55,6 +55,7 @@ export type ApiStatus = {
 };
 
 export type UploadSummary = {
+  ingestionReportId?: number;
   filename: string;
   detectedType: string;
   rowsProcessed: number;
@@ -63,6 +64,10 @@ export type UploadSummary = {
   processedAt: string;
   rawFile: string;
   processedFile: string;
+  detectionConfidence?: number | null;
+  reviewRequired?: boolean;
+  reviewStatus?: ReviewStatus | null;
+  reviewReasons?: string[];
 };
 
 export type UploadLifecycleState = "idle" | "uploading" | "processing" | "success" | "error";
@@ -71,6 +76,47 @@ export type UploadHistoryItem = UploadSummary & {
   id: string;
   status: "success" | "error";
   timestamp: string;
+};
+
+export type WorkspaceView = "report" | "review";
+
+export type ReviewStatus = "pending" | "approved" | "rejected" | "not_required";
+
+export type ReviewQueueFilter = "pending" | "review_required" | "recent";
+
+export type AppliedMapping = {
+  original_name?: string;
+  normalized_name?: string;
+  canonical_name?: string | null;
+  matched_alias?: string | null;
+  score?: number;
+  accepted?: boolean;
+  [key: string]: unknown;
+};
+
+export type IngestionReport = {
+  id: number;
+  filename: string;
+  sourceFile: string;
+  sourceType: string;
+  detectedType: string;
+  layoutSignature: string | null;
+  rawFile: string | null;
+  processedFile: string | null;
+  parserName: string | null;
+  detectionConfidence: number | null;
+  reviewRequired: boolean;
+  reviewStatus: ReviewStatus;
+  reviewReasons: string[];
+  detectedColumns: string[];
+  appliedMappings: AppliedMapping[];
+  structureDetection: Record<string, unknown>;
+  rowsProcessed: number;
+  rowsSkipped: number;
+  status: string;
+  message: string;
+  createdAt: string;
+  processedAt: string | null;
 };
 
 export type BuilderState = {

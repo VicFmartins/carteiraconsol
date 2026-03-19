@@ -1,5 +1,11 @@
 import { formatDateTime } from "../lib/formatters";
-import type { ApiStatus, UploadHistoryItem, UploadLifecycleState, UploadSummary } from "../types/report";
+import type {
+  ApiStatus,
+  UploadHistoryItem,
+  UploadLifecycleState,
+  UploadSummary,
+  WorkspaceView
+} from "../types/report";
 
 type SidebarProps = {
   clientName: string;
@@ -8,11 +14,14 @@ type SidebarProps = {
   loadingLiveData: boolean;
   uploadState: UploadLifecycleState;
   sourceContext: string;
+  workspaceView: WorkspaceView;
+  reviewQueueCount: number;
   uploadSummary: UploadSummary | null;
   uploadHistory: UploadHistoryItem[];
   lastError: string | null;
   onClientNameChange: (value: string) => void;
   onDiagnosisChange: (value: string) => void;
+  onWorkspaceViewChange: (value: WorkspaceView) => void;
   onFillMockData: () => void;
   onDownloadTemplate: () => void;
   onUploadSpreadsheet: () => void;
@@ -52,6 +61,68 @@ function ActionButton({
   );
 }
 
+function WorkspaceModeCard({
+  workspaceView,
+  reviewQueueCount,
+  onWorkspaceViewChange
+}: {
+  workspaceView: WorkspaceView;
+  reviewQueueCount: number;
+  onWorkspaceViewChange: (value: WorkspaceView) => void;
+}) {
+  const modes: Array<{
+    value: WorkspaceView;
+    label: string;
+    helper: string;
+    badge?: string;
+  }> = [
+    {
+      value: "report",
+      label: "Report Builder",
+      helper: "Upload, ETL e preview executivo da carteira."
+    },
+    {
+      value: "review",
+      label: "Review Queue",
+      helper: "Fila para validar ingestoes com baixa confianca.",
+      badge: reviewQueueCount > 0 ? String(reviewQueueCount) : undefined
+    }
+  ];
+
+  return (
+    <div className="mt-8 rounded-[24px] border border-white/8 bg-white/[0.03] p-4">
+      <div className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Modo de trabalho</div>
+      <div className="mt-4 grid gap-3">
+        {modes.map((mode) => {
+          const active = workspaceView === mode.value;
+          return (
+            <button
+              key={mode.value}
+              type="button"
+              onClick={() => onWorkspaceViewChange(mode.value)}
+              className={`rounded-[20px] border px-4 py-4 text-left transition ${
+                active
+                  ? "border-cyan-300/24 bg-cyan-300/[0.08] text-cyan-50"
+                  : "border-white/8 bg-white/[0.02] text-slate-200 hover:bg-white/[0.06]"
+              }`}
+            >
+              <div className="flex items-center justify-between gap-3">
+                <div className="text-sm font-semibold">{mode.label}</div>
+                {mode.badge ? (
+                  <span className="rounded-full bg-amber-400/16 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-amber-100">
+                    {mode.badge}
+                  </span>
+                ) : null}
+              </div>
+              <div className={`mt-2 text-xs leading-6 ${active ? "text-cyan-50/80" : "text-slate-400"}`}>{mode.helper}</div>
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 function UploadStatusCard({
   uploadState,
   lastError
@@ -64,7 +135,7 @@ function UploadStatusCard({
       <div className="mt-6 rounded-[22px] border border-cyan-300/18 bg-cyan-300/[0.08] px-4 py-4 text-sm text-cyan-50">
         <div className="font-semibold">Enviando arquivo</div>
         <div className="mt-2 leading-7 text-cyan-50/80">
-          O upload está sendo transmitido para o backend e a ingestão será iniciada em seguida.
+          O upload esta sendo transmitido para o backend e a ingestao sera iniciada em seguida.
         </div>
       </div>
     );
@@ -75,7 +146,7 @@ function UploadStatusCard({
       <div className="mt-6 rounded-[22px] border border-sky-300/18 bg-sky-300/[0.09] px-4 py-4 text-sm text-sky-50">
         <div className="font-semibold">Processing portfolio...</div>
         <div className="mt-2 leading-7 text-sky-50/80">
-          O ETL já recebeu o arquivo. Agora estamos atualizando analytics e recarregando o snapshot consolidado.
+          O ETL ja recebeu o arquivo. Agora estamos atualizando analytics e recarregando o snapshot consolidado.
         </div>
       </div>
     );
@@ -84,7 +155,7 @@ function UploadStatusCard({
   if (uploadState === "error" && lastError) {
     return (
       <div className="mt-6 rounded-[22px] border border-rose-400/14 bg-rose-400/[0.08] px-4 py-4 text-sm text-rose-100">
-        <div className="font-semibold">Atenção no fluxo de upload</div>
+        <div className="font-semibold">Atencao no fluxo de upload</div>
         <div className="mt-2 leading-7 text-rose-100/85">{lastError}</div>
       </div>
     );
@@ -126,6 +197,12 @@ function ProcessingSummaryCard({ uploadSummary }: { uploadSummary: UploadSummary
         </div>
       </div>
 
+      {uploadSummary.reviewRequired ? (
+        <div className="mt-3 rounded-2xl border border-amber-300/18 bg-amber-300/[0.08] px-3 py-3 text-xs leading-6 text-amber-100">
+          Este upload gerou um item para revisao humana.
+        </div>
+      ) : null}
+
       <div className="mt-3 text-[11px] uppercase tracking-[0.18em] text-emerald-100/60">Processado em</div>
       <div className="mt-1 font-medium">{formatDateTime(uploadSummary.processedAt)}</div>
       <div className="mt-3 leading-7 text-emerald-50/85">{uploadSummary.message}</div>
@@ -142,7 +219,7 @@ function UploadHistoryCard({ uploadHistory }: { uploadHistory: UploadHistoryItem
     <div className="mt-6 rounded-[22px] border border-white/8 bg-white/[0.03] px-4 py-4">
       <div className="flex items-center justify-between gap-3">
         <div className="font-semibold text-white">Recent upload runs</div>
-        <div className="text-[11px] uppercase tracking-[0.18em] text-slate-500">{uploadHistory.length} visíveis</div>
+        <div className="text-[11px] uppercase tracking-[0.18em] text-slate-500">{uploadHistory.length} visiveis</div>
       </div>
 
       <div className="mt-4 space-y-3">
@@ -189,11 +266,14 @@ export default function Sidebar({
   loadingLiveData,
   uploadState,
   sourceContext,
+  workspaceView,
+  reviewQueueCount,
   uploadSummary,
   uploadHistory,
   lastError,
   onClientNameChange,
   onDiagnosisChange,
+  onWorkspaceViewChange,
   onFillMockData,
   onDownloadTemplate,
   onUploadSpreadsheet,
@@ -210,18 +290,24 @@ export default function Sidebar({
             Report Builder
           </div>
           <h1 className="mt-5 font-display text-3xl font-extrabold tracking-tight text-white">
-            Workspace de entrega para análise patrimonial.
+            Workspace de entrega para analise patrimonial.
           </h1>
           <p className="mt-3 text-sm leading-7 text-slate-400">
-            Estruture o contexto do cliente, monte uma prévia executiva e prepare um artefato apresentável sem sair da
+            Estruture o contexto do cliente, monte uma previa executiva e acompanhe a fila de revisao sem sair da
             base de dados consolidada.
           </p>
         </div>
 
+        <WorkspaceModeCard
+          workspaceView={workspaceView}
+          reviewQueueCount={reviewQueueCount}
+          onWorkspaceViewChange={onWorkspaceViewChange}
+        />
+
         <div className="mt-8 rounded-[24px] border border-white/8 bg-white/[0.03] p-4">
           <div className="flex items-center justify-between gap-3">
             <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Status de integração</p>
+              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Status de integracao</p>
               <p className="mt-2 text-sm font-semibold text-white">{apiStatus.message}</p>
             </div>
             <span
@@ -251,13 +337,13 @@ export default function Sidebar({
 
           <div>
             <label htmlFor="diagnosis" className="mb-2 block text-xs font-semibold uppercase tracking-[0.22em] text-slate-500">
-              Diagnóstico consultivo
+              Diagnostico consultivo
             </label>
             <textarea
               id="diagnosis"
               value={diagnosis}
               onChange={(event) => onDiagnosisChange(event.target.value)}
-              placeholder="Descreva a leitura estratégica da carteira, principais concentrações, hipóteses e direcionamentos."
+              placeholder="Descreva a leitura estrategica da carteira, principais concentracoes, hipoteses e direcionamentos."
               rows={7}
               className="w-full rounded-[20px] border border-white/8 bg-white/[0.04] px-4 py-3 text-sm leading-7 text-white outline-none transition placeholder:text-slate-600 focus:border-cyan-300/30 focus:bg-white/[0.05]"
             />
@@ -269,13 +355,13 @@ export default function Sidebar({
           <div className="mt-4 space-y-3">
             <ActionButton
               label="Fill with mock data"
-              helper="Carrega um cenário premium de demonstração para montar a narrativa do relatório."
+              helper="Carrega um cenario premium de demonstracao para montar a narrativa do relatorio."
               onClick={onFillMockData}
               variant="primary"
             />
             <ActionButton
               label="Download spreadsheet template"
-              helper="Baixe um CSV-base para estruturar a importação do preview no mesmo formato do builder."
+              helper="Baixe um CSV-base para estruturar a importacao do preview no mesmo formato do builder."
               onClick={onDownloadTemplate}
             />
             <ActionButton
@@ -286,14 +372,14 @@ export default function Sidebar({
                     ? "Updating analytics..."
                     : "Upload spreadsheet"
               }
-              helper="Envia o arquivo ao backend, dispara o ETL real e atualiza a prévia com os dados consolidados."
+              helper="Envia o arquivo ao backend, dispara o ETL real e atualiza a previa com os dados consolidados."
               onClick={onUploadSpreadsheet}
               variant="subtle"
               disabled={uploadBusy}
             />
             <ActionButton
               label="Generate PDF"
-              helper={loadingLiveData ? "Aguarde o snapshot concluir antes de exportar." : "Abre a visualização pronta para impressão e exportação em PDF."}
+              helper={loadingLiveData ? "Aguarde o snapshot concluir antes de exportar." : "Abre a visualizacao pronta para impressao e exportacao em PDF."}
               onClick={onGeneratePdf}
               disabled={loadingLiveData || uploadBusy}
             />
@@ -305,8 +391,8 @@ export default function Sidebar({
         <UploadHistoryCard uploadHistory={uploadHistory} />
 
         <div className="mt-auto pt-8 text-xs leading-6 text-slate-500">
-          O fluxo de upload agora deixa um rastro visível de execução. O último processamento e os uploads recentes
-          continuam acessíveis no sidebar para auditoria rápida.
+          O workspace agora combina entrega executiva com rastreabilidade operacional. Uploads recentes e itens de
+          revisao continuam acessiveis sem quebrar o fluxo principal do produto.
         </div>
       </div>
     </aside>

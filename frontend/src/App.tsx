@@ -1,22 +1,27 @@
 import { useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
 import EmptyState from "./components/EmptyState";
 import ReportCanvas from "./components/ReportCanvas";
+import ReviewQueueWorkspace from "./components/ReviewQueueWorkspace";
 import Sidebar from "./components/Sidebar";
 import { mockPortfolioRecords } from "./data/mockReport";
-import { uploadPortfolioFile } from "./lib/api";
+import { fetchIngestionReport, fetchIngestionReports, updateIngestionReportReview, uploadPortfolioFile } from "./lib/api";
 import { buildReport, loadLiveRecords } from "./lib/reportBuilder";
 import type {
   ApiStatus,
+  IngestionReport,
   PortfolioRecord,
   PortfolioReport,
+  ReviewQueueFilter,
+  ReviewStatus,
   UploadHistoryItem,
   UploadLifecycleState,
-  UploadSummary
+  UploadSummary,
+  WorkspaceView
 } from "./types/report";
 
 const initialApiStatus: ApiStatus = {
   connected: false,
-  message: "Verificando conexão com a API"
+  message: "Verificando conexao com a API"
 };
 
 const SNAPSHOT_REFRESH_DELAY_MS = 350;
@@ -36,19 +41,45 @@ function detectFileTypeFromName(filename: string) {
   return suffix || "unknown";
 }
 
+function resolveReviewFilters(filter: ReviewQueueFilter) {
+  if (filter === "pending") {
+    return { reviewStatus: "pending" as const, limit: 50 };
+  }
+  if (filter === "review_required") {
+    return { reviewRequired: true, limit: 50 };
+  }
+  return { limit: 50 };
+}
+
+function sortReviewReports(reports: IngestionReport[]) {
+  return [...reports].sort((left, right) => {
+    const rightDate = new Date(right.processedAt ?? right.createdAt).getTime();
+    const leftDate = new Date(left.processedAt ?? left.createdAt).getTime();
+    return rightDate - leftDate;
+  });
+}
+
 export default function App() {
   const [clientName, setClientName] = useState("");
   const [diagnosis, setDiagnosis] = useState("");
   const [records, setRecords] = useState<PortfolioRecord[] | null>(null);
   const [report, setReport] = useState<PortfolioReport | null>(null);
   const [uploadName, setUploadName] = useState<string | null>(null);
-  const [reportSourceLabel, setReportSourceLabel] = useState("Workspace executivo de análise");
+  const [reportSourceLabel, setReportSourceLabel] = useState("Workspace executivo de analise");
   const [apiStatus, setApiStatus] = useState<ApiStatus>(initialApiStatus);
   const [loadingLiveData, setLoadingLiveData] = useState(false);
   const [lastError, setLastError] = useState<string | null>(null);
   const [uploadState, setUploadState] = useState<UploadLifecycleState>("idle");
   const [uploadSummary, setUploadSummary] = useState<UploadSummary | null>(null);
   const [uploadHistory, setUploadHistory] = useState<UploadHistoryItem[]>([]);
+  const [workspaceView, setWorkspaceView] = useState<WorkspaceView>("report");
+  const [reviewFilter, setReviewFilter] = useState<ReviewQueueFilter>("pending");
+  const [reviewReports, setReviewReports] = useState<IngestionReport[]>([]);
+  const [selectedReviewReport, setSelectedReviewReport] = useState<IngestionReport | null>(null);
+  const [reviewLoading, setReviewLoading] = useState(false);
+  const [reviewActionLoading, setReviewActionLoading] = useState(false);
+  const [reviewError, setReviewError] = useState<string | null>(null);
+  const [reviewFeedback, setReviewFeedback] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
@@ -58,7 +89,7 @@ export default function App() {
       try {
         const response = await fetch("/health");
         if (!response.ok) {
-          throw new Error("API indisponível");
+          throw new Error("API indisponivel");
         }
 
         if (isMounted) {
@@ -100,11 +131,21 @@ export default function App() {
   }, [clientName, diagnosis, records, reportSourceLabel]);
 
   const sourceContext = useMemo(() => {
+    if (workspaceView === "review") {
+      return selectedReviewReport
+        ? `Revisando ingestao #${selectedReviewReport.id} - ${selectedReviewReport.filename}`
+        : "Fila de revisao operacional para ingestao inteligente";
+    }
     if (uploadName) {
       return `Arquivo processado: ${uploadName}`;
     }
     return report?.sourceLabel ?? reportSourceLabel;
-  }, [report?.sourceLabel, reportSourceLabel, uploadName]);
+  }, [report?.sourceLabel, reportSourceLabel, selectedReviewReport, uploadName, workspaceView]);
+
+  const reviewQueueCount = useMemo(
+    () => reviewReports.filter((item) => item.reviewStatus === "pending" || item.reviewRequired).length,
+    [reviewReports]
+  );
 
   function appendUploadHistory(item: UploadHistoryItem) {
     setUploadHistory((current) => [item, ...current].slice(0, MAX_UPLOAD_HISTORY_ITEMS));
@@ -126,9 +167,54 @@ export default function App() {
     setLastError(null);
   }
 
+  async function loadReviewQueue(
+    filter = reviewFilter,
+    options?: {
+      preferredReportId?: number;
+      fallbackSelected?: IngestionReport | null;
+      silent?: boolean;
+    }
+  ) {
+    if (!options?.silent) {
+      setReviewLoading(true);
+      setReviewError(null);
+    }
+
+    try {
+      const nextReports = sortReviewReports(await fetchIngestionReports(resolveReviewFilters(filter)));
+      setReviewReports(nextReports);
+
+      const targetId = options?.preferredReportId ?? selectedReviewReport?.id ?? null;
+      const selectedFromList = targetId ? nextReports.find((item) => item.id === targetId) ?? null : null;
+      setSelectedReviewReport(selectedFromList ?? options?.fallbackSelected ?? nextReports[0] ?? null);
+    } catch (error) {
+      if (!options?.silent) {
+        setReviewError(error instanceof Error ? error.message : "Nao foi possivel carregar a fila de revisao.");
+      }
+    } finally {
+      if (!options?.silent) {
+        setReviewLoading(false);
+      }
+    }
+  }
+
+  useEffect(() => {
+    void loadReviewQueue("pending", { silent: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    if (workspaceView !== "review") {
+      return;
+    }
+    void loadReviewQueue(reviewFilter);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [workspaceView, reviewFilter]);
+
   function handleFillMockData() {
     setUploadName(null);
     setUploadState("idle");
+    setWorkspaceView("report");
     mountPreview(mockPortfolioRecords, "Snapshot demonstrativo com mock data");
   }
 
@@ -148,7 +234,7 @@ export default function App() {
       try {
         const nextRecords = await loadLiveRecords();
         if (!nextRecords.length) {
-          throw new Error("O backend respondeu, mas o snapshot ainda não trouxe posições.");
+          throw new Error("O backend respondeu, mas o snapshot ainda nao trouxe posicoes.");
         }
         return nextRecords;
       } catch (error) {
@@ -168,12 +254,14 @@ export default function App() {
 
     setUploadState("uploading");
     setLastError(null);
+    setReviewFeedback(null);
     let latestSummary: UploadSummary | null = null;
 
     try {
       const uploadResult = await uploadPortfolioFile(file);
       setUploadName(uploadResult.filename);
       latestSummary = {
+        ingestionReportId: uploadResult.ingestion_report_id,
         filename: uploadResult.filename,
         detectedType: uploadResult.detected_type,
         rowsProcessed: uploadResult.rows_processed,
@@ -181,18 +269,26 @@ export default function App() {
         message: uploadResult.message,
         processedAt: uploadResult.processed_at,
         rawFile: uploadResult.raw_file,
-        processedFile: uploadResult.processed_file
+        processedFile: uploadResult.processed_file,
+        detectionConfidence: uploadResult.detection_confidence ?? null,
+        reviewRequired: uploadResult.review_required ?? false,
+        reviewStatus: uploadResult.review_status ?? null,
+        reviewReasons: uploadResult.review_reasons ?? []
       };
       setUploadSummary(latestSummary);
       appendUploadHistory(buildHistoryItem(latestSummary, "success"));
 
       setUploadState("processing");
       const nextRecords = await refreshSnapshotAfterUpload();
-      mountPreview(nextRecords, "Snapshot atualizado após upload no backend");
+      mountPreview(nextRecords, "Snapshot atualizado apos upload no backend");
       setUploadState("success");
+
+      void loadReviewQueue(reviewFilter, {
+        preferredReportId: uploadResult.ingestion_report_id,
+        silent: workspaceView !== "review"
+      });
     } catch (error) {
-      const message =
-        error instanceof Error ? error.message : "Não foi possível enviar a planilha para o backend.";
+      const message = error instanceof Error ? error.message : "Nao foi possivel enviar a planilha para o backend.";
       setUploadState("error");
       setLastError(message);
 
@@ -221,17 +317,60 @@ export default function App() {
       const nextRecords = await loadLiveRecords();
       setUploadName(null);
       setUploadState("idle");
+      setWorkspaceView("report");
       mountPreview(nextRecords, "Snapshot conectado ao backend CarteiraConsol");
     } catch (error) {
-      setLastError(error instanceof Error ? error.message : "Não foi possível carregar os dados atuais da plataforma.");
+      setLastError(error instanceof Error ? error.message : "Nao foi possivel carregar os dados atuais da plataforma.");
     } finally {
       setLoadingLiveData(false);
     }
   }
 
+  async function handleSelectReviewReport(reportId: number) {
+    const preview = reviewReports.find((item) => item.id === reportId) ?? null;
+    if (preview) {
+      setSelectedReviewReport(preview);
+    }
+    setReviewError(null);
+    setReviewFeedback(null);
+
+    try {
+      const detail = await fetchIngestionReport(reportId);
+      setSelectedReviewReport(detail);
+    } catch (error) {
+      setReviewError(error instanceof Error ? error.message : "Nao foi possivel carregar o detalhe da revisao.");
+    }
+  }
+
+  async function handleReviewAction(reviewStatus: ReviewStatus) {
+    if (!selectedReviewReport) {
+      return;
+    }
+
+    setReviewActionLoading(true);
+    setReviewError(null);
+    setReviewFeedback(null);
+
+    try {
+      const updated = await updateIngestionReportReview(selectedReviewReport.id, {
+        reviewStatus
+      });
+      setSelectedReviewReport(updated);
+      setReviewFeedback(`Relatorio #${updated.id} atualizado para ${updated.reviewStatus}.`);
+      await loadReviewQueue(reviewFilter, {
+        preferredReportId: updated.id,
+        fallbackSelected: updated
+      });
+    } catch (error) {
+      setReviewError(error instanceof Error ? error.message : "Nao foi possivel atualizar a revisao.");
+    } finally {
+      setReviewActionLoading(false);
+    }
+  }
+
   function handleGeneratePdf() {
     if (!report) {
-      setLastError("Gere uma prévia antes de exportar o relatório em PDF.");
+      setLastError("Gere uma previa antes de exportar o relatorio em PDF.");
       return;
     }
     window.print();
@@ -255,11 +394,14 @@ export default function App() {
           loadingLiveData={loadingLiveData}
           uploadState={uploadState}
           sourceContext={sourceContext}
+          workspaceView={workspaceView}
+          reviewQueueCount={reviewQueueCount}
           uploadSummary={uploadSummary}
           uploadHistory={uploadHistory}
           lastError={lastError}
           onClientNameChange={setClientName}
           onDiagnosisChange={setDiagnosis}
+          onWorkspaceViewChange={setWorkspaceView}
           onFillMockData={handleFillMockData}
           onDownloadTemplate={handleDownloadTemplate}
           onUploadSpreadsheet={handleSelectUpload}
@@ -267,7 +409,21 @@ export default function App() {
         />
 
         <main className="min-w-0">
-          {!report ? (
+          {workspaceView === "review" ? (
+            <ReviewQueueWorkspace
+              reports={reviewReports}
+              selectedReport={selectedReviewReport}
+              loading={reviewLoading}
+              actionLoading={reviewActionLoading}
+              error={reviewError}
+              feedback={reviewFeedback}
+              activeFilter={reviewFilter}
+              onFilterChange={setReviewFilter}
+              onRefresh={() => void loadReviewQueue(reviewFilter)}
+              onSelectReport={(reportId) => void handleSelectReviewReport(reportId)}
+              onReviewAction={(status) => void handleReviewAction(status)}
+            />
+          ) : !report ? (
             <EmptyState
               apiStatus={apiStatus}
               loadingLiveData={loadingLiveData}

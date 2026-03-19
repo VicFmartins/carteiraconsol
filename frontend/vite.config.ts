@@ -12,6 +12,7 @@ export default defineConfig({
       "/accounts": "http://127.0.0.1:8000",
       "/assets": "http://127.0.0.1:8000",
       "/positions": "http://127.0.0.1:8000",
+      "/ingestion-reports": "http://127.0.0.1:8000",
       "/etl": "http://127.0.0.1:8000"
     }
   }
