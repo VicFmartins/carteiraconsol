@@ -65,12 +65,22 @@ class PortfolioETLPipeline:
             review_decision = dataframe.attrs.get("review_decision", {})
             detection_confidence = dataframe.attrs.get("detection_confidence")
             review_required = bool(dataframe.attrs.get("review_required", False))
-            review_reasons = tuple(review_decision.get("reasons", ()))
+            review_reasons = list(review_decision.get("reasons", ()))
             layout_signature = dataframe.attrs.get("layout_signature")
             detected_columns = tuple(str(column) for column in dataframe.attrs.get("detected_columns", tuple(dataframe.columns)))
             applied_mappings = tuple(dict(item) for item in dataframe.attrs.get("column_mapping", ()))
             structure_detection = dataframe.attrs.get("structure_detection")
             transformed = normalize_portfolio_frame(dataframe)
+            normalization_review_required = bool(transformed.attrs.get("review_required", False))
+            normalization_review_reasons = list(transformed.attrs.get("review_reasons", ()))
+            if normalization_review_required:
+                review_required = True
+            if normalization_review_reasons:
+                review_reasons.extend(normalization_review_reasons)
+                if detection_confidence is None:
+                    detection_confidence = 60.0
+                else:
+                    detection_confidence = min(float(detection_confidence), 60.0)
             classified = apply_asset_classification(transformed)
             enriched = enrich_assets(classified)
             processed_file_path = write_dataframe_to_csv(enriched)
@@ -94,7 +104,7 @@ class PortfolioETLPipeline:
                 rows_skipped=rows_skipped,
                 detection_confidence=detection_confidence,
                 review_required=review_required,
-                review_reasons=review_reasons,
+                review_reasons=tuple(dict.fromkeys(review_reasons)),
                 parser_name=parser_name,
                 layout_signature=str(layout_signature) if layout_signature else None,
                 detected_columns=detected_columns,

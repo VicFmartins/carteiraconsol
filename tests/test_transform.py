@@ -115,5 +115,47 @@ def test_normalizer_raises_clear_error_for_missing_required_columns() -> None:
         ]
     )
 
-    with pytest.raises(ETLValidationError, match="Missing required portfolio columns"):
+    with pytest.raises(ETLValidationError, match="Suggested mapping"):
         normalize_portfolio_frame(raw_frame)
+
+
+def test_normalizer_infers_missing_broker_from_source_filename_and_marks_review() -> None:
+    raw_frame = pd.DataFrame(
+        [
+            {
+                "Cliente": "Maria Oliveira",
+                "Ativo": "Tesouro Selic 2029",
+                "Qtd": "15",
+                "Preco Medio": "10.250,33",
+                "Data de Referencia": "15/03/2026",
+                "AdvisorCode": "XP-001",
+            }
+        ]
+    )
+    raw_frame.attrs["source_filename"] = "XP_client_positions_20260319.csv"
+
+    normalized = normalize_portfolio_frame(raw_frame)
+
+    assert normalized.loc[0, "broker"] == "XP"
+    assert normalized.attrs["review_required"] is True
+    assert "broker_inferred" in normalized.attrs["review_reasons"]
+
+
+def test_normalizer_defaults_missing_broker_to_unknown_and_marks_review() -> None:
+    raw_frame = pd.DataFrame(
+        [
+            {
+                "Cliente": "Lead BTG",
+                "Ativo": "CDB Banco Itau 2028",
+                "Qtd": "5",
+                "Preco Medio": "1.000,00",
+                "Data de Referencia": "15/03/2026",
+            }
+        ]
+    )
+
+    normalized = normalize_portfolio_frame(raw_frame)
+
+    assert normalized.loc[0, "broker"] == "UNKNOWN"
+    assert normalized.attrs["review_required"] is True
+    assert "broker_defaulted_unknown" in normalized.attrs["review_reasons"]

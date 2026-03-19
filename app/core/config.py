@@ -59,6 +59,9 @@ class Settings:
     alerts_enabled: bool
     alert_provider: str
     alert_sns_topic_arn: str
+    infer_missing_broker: bool
+    default_broker_name: str
+    etl_soft_validation_mode: bool
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -111,6 +114,9 @@ class Settings:
             alerts_enabled=_get_bool_env("ALERTS_ENABLED", False),
             alert_provider=alert_provider,
             alert_sns_topic_arn=_get_env("ALERT_SNS_TOPIC_ARN", ""),
+            infer_missing_broker=_get_bool_env("INFER_MISSING_BROKER", True),
+            default_broker_name=_get_env("DEFAULT_BROKER_NAME", "UNKNOWN"),
+            etl_soft_validation_mode=_get_bool_env("ETL_SOFT_VALIDATION_MODE", True),
         )
 
     @property

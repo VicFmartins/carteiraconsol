@@ -107,3 +107,24 @@ def test_file_reader_and_normalizer_can_recover_messy_portfolio_csv(tmp_path: Pa
     assert normalized.loc[0, "total_value"] == Decimal("153754.95")
     assert str(normalized.loc[0, "reference_date"]) == "2026-03-18"
     assert normalized.loc[1, "normalized_name"] == "PETR-4"
+
+
+def test_file_reader_and_normalizer_infer_broker_from_btg_filename_when_column_is_missing(tmp_path: Path) -> None:
+    file_path = tmp_path / "BTG_leads_positions.csv"
+    file_path.write_text(
+        "\n".join(
+            [
+                "Relatorio Leads BTG;;;;",
+                "Cliente;AdvisorCode;Ativo;Quantidade;Data Referencia",
+                "Ana Costa;BTG-LEAD-001;CDB Banco Itau 2028;5;18/03/2026",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    dataframe = FileReader().read(file_path)
+    normalized = normalize_portfolio_frame(dataframe)
+
+    assert normalized.loc[0, "broker"] == "BTG"
+    assert normalized.attrs["review_required"] is True
+    assert "broker_inferred" in normalized.attrs["review_reasons"]

@@ -53,6 +53,8 @@ class FileReader:
         dataframe = dataframe.dropna(how="all").dropna(axis=1, how="all")
         if dataframe.empty:
             raise ETLInputError(f"Input file has no usable rows: {file_path}")
+        dataframe.attrs.setdefault("source_filename", file_path.name)
+        dataframe.attrs.setdefault("source_path", str(file_path))
         return dataframe
 
     def _read_generic_file(self, file_path: Path) -> pd.DataFrame:

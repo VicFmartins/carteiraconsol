@@ -38,6 +38,7 @@ CANONICAL_FIELDS: tuple[SchemaField, ...] = (
         aliases=(
             "corretora",
             "instituicao",
+            "institution",
             "instituicao financeira",
             "broker",
             "brokerage",

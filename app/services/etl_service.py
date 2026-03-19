@@ -121,7 +121,9 @@ class ETLService:
 
         upload_dir = self.settings.raw_data_dir / "uploads"
         upload_dir.mkdir(parents=True, exist_ok=True)
-        destination = upload_dir / f"upload_{uuid4().hex}{suffix}"
+        safe_stem = "".join(character if character.isalnum() else "_" for character in Path(cleaned_name).stem).strip("_")
+        safe_stem = (safe_stem or "file")[:48]
+        destination = upload_dir / f"upload_{uuid4().hex}_{safe_stem}{suffix}"
         file_stream.seek(0)
         with destination.open("wb") as buffer:
             shutil.copyfileobj(file_stream, buffer)

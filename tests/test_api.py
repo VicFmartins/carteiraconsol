@@ -373,6 +373,32 @@ def test_upload_persists_review_required_ingestion_report(api_client: TestClient
     assert "cliente" in [column.lower() for column in report["detected_columns"]]
 
 
+def test_upload_infers_missing_broker_from_filename_and_keeps_processing(api_client: TestClient) -> None:
+    csv_content = "\n".join(
+        [
+            "cliente,advisorcode,ativo,quantidade,data referencia",
+            "Carlos Lima,XP-001,Tesouro Selic 2029,2,2026-03-17",
+        ]
+    ).encode("utf-8")
+
+    response = api_client.post(
+        "/upload",
+        files={"file": ("XP_leads_positions.csv", csv_content, "text/csv")},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()["data"]
+    assert payload["rows_processed"] == 1
+    assert payload["review_required"] is True
+    assert "broker_inferred" in payload["review_reasons"]
+
+    reports_response = api_client.get(f"/ingestion-reports/{payload['ingestion_report_id']}")
+    report = reports_response.json()["data"]
+    assert report["status"] == "review_required"
+    assert report["review_status"] == "pending"
+    assert "advisorcode" in [column.lower() for column in report["detected_columns"]]
+
+
 def test_get_ingestion_report_returns_report_details(api_client: TestClient) -> None:
     csv_content = "\n".join(
         [

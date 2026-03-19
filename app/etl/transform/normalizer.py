@@ -53,6 +53,7 @@ COLUMN_ALIASES: dict[str, set[str]] = {
     "broker": {
         "corretora",
         "instituicao",
+        "institution",
         "broker",
         "custodian",
         "instituicao financeira",
@@ -203,9 +204,12 @@ def normalize_portfolio_frame(dataframe: pd.DataFrame) -> pd.DataFrame:
     renamed_columns = {column: resolve_canonical_column(column) for column in dataframe.columns}
     logger.info("Resolved input columns: %s", renamed_columns)
     frame = dataframe.rename(columns=renamed_columns).copy()
+    logger.info("Detected canonicalized portfolio columns: %s", list(frame.columns))
 
+    frame = _apply_missing_column_fallbacks(frame)
     _validate_required_source_columns(frame)
     frame = _build_default_columns(frame)
+    frame = _fill_missing_broker_values(frame)
 
     frame["client_name"] = frame["client_name"].map(lambda value: normalize_text(value, "Unknown Client"))
     frame["broker"] = frame["broker"].map(normalize_broker_name)
@@ -237,6 +241,10 @@ def normalize_portfolio_frame(dataframe: pd.DataFrame) -> pd.DataFrame:
     normalized = frame[list(REQUIRED_OUTPUT_COLUMNS)].copy()
     normalized.attrs["rows_skipped"] = rows_skipped
     normalized.attrs["validation_summary"] = dict(validation_summary)
+    normalized.attrs["review_required"] = bool(frame.attrs.get("review_required", False))
+    normalized.attrs["review_reasons"] = tuple(frame.attrs.get("review_reasons", ()))
+    normalized.attrs["inferred_fields"] = dict(frame.attrs.get("inferred_fields", {}))
+    normalized.attrs["normalization_warnings"] = tuple(frame.attrs.get("normalization_warnings", ()))
     return normalized
 
 
@@ -246,10 +254,60 @@ def _validate_required_source_columns(frame: pd.DataFrame) -> None:
         return
 
     available_columns = ", ".join(sorted(frame.columns))
+    suggestions = _build_missing_column_suggestions(missing_fields)
+    example_fix = (
+        "Example fix: add a 'Corretora'/'Broker' column, or include a recognizable source hint such as 'XP' or "
+        "'BTG' in the filename so the broker can be inferred."
+        if "broker" in missing_fields
+        else "Example fix: rename the source columns to the canonical portfolio headers or add the missing fields."
+    )
     raise ETLValidationError(
         "Missing required portfolio columns after alias resolution: "
-        f"{', '.join(missing_fields)}. Available columns: {available_columns}"
+        f"{', '.join(missing_fields)}. Available columns: {available_columns}. "
+        f"Suggested mapping: {suggestions}. {example_fix}"
     )
+
+
+def _apply_missing_column_fallbacks(frame: pd.DataFrame) -> pd.DataFrame:
+    settings = get_settings()
+    inferred_fields = dict(frame.attrs.get("inferred_fields", {}))
+    review_reasons = list(frame.attrs.get("review_reasons", ()))
+    normalization_warnings = list(frame.attrs.get("normalization_warnings", ()))
+
+    missing_fields = [field for field in REQUIRED_SOURCE_FIELDS if field not in frame.columns]
+    if not missing_fields:
+        return frame
+
+    logger.warning("Required portfolio columns missing after alias resolution: %s", missing_fields)
+
+    if "broker" in missing_fields and settings.infer_missing_broker:
+        inferred_broker, inference_source = _infer_broker_value(frame)
+        if inferred_broker is not None:
+            frame["broker"] = inferred_broker
+            inferred_fields["broker"] = inference_source
+            review_reasons.append("broker_inferred")
+            normalization_warnings.append(f"broker inferred from {inference_source}")
+            logger.warning(
+                "Missing broker column inferred as '%s' using %s.",
+                inferred_broker,
+                inference_source,
+            )
+        elif settings.etl_soft_validation_mode:
+            frame["broker"] = settings.default_broker_name
+            inferred_fields["broker"] = "default_unknown"
+            review_reasons.append("broker_defaulted_unknown")
+            normalization_warnings.append("broker defaulted to UNKNOWN because no reliable hint was found")
+            logger.warning(
+                "Missing broker column defaulted to '%s' because no reliable hint was found.",
+                settings.default_broker_name,
+            )
+
+    frame.attrs["inferred_fields"] = inferred_fields
+    frame.attrs["normalization_warnings"] = tuple(normalization_warnings)
+    if review_reasons:
+        frame.attrs["review_required"] = True
+        frame.attrs["review_reasons"] = tuple(dict.fromkeys(review_reasons))
+    return frame
 
 
 def _build_default_columns(frame: pd.DataFrame) -> pd.DataFrame:
@@ -265,6 +323,50 @@ def _build_default_columns(frame: pd.DataFrame) -> pd.DataFrame:
         if column not in frame.columns:
             frame[column] = default_value
             logger.info("Applied default value for missing column '%s'.", column)
+    return frame
+
+
+def _fill_missing_broker_values(frame: pd.DataFrame) -> pd.DataFrame:
+    if "broker" not in frame.columns:
+        return frame
+
+    settings = get_settings()
+    missing_broker_mask = frame["broker"].map(is_blankish)
+    if not missing_broker_mask.any():
+        return frame
+
+    inferred_broker, inference_source = _infer_broker_value(frame)
+    replacement_value = inferred_broker or settings.default_broker_name
+    frame.loc[missing_broker_mask, "broker"] = replacement_value
+
+    review_reasons = list(frame.attrs.get("review_reasons", ()))
+    normalization_warnings = list(frame.attrs.get("normalization_warnings", ()))
+    inferred_fields = dict(frame.attrs.get("inferred_fields", {}))
+
+    if inferred_broker is not None:
+        review_reasons.append("broker_inferred")
+        normalization_warnings.append(f"broker filled from {inference_source}")
+        inferred_fields["broker"] = inference_source
+        logger.warning(
+            "Filled %s blank broker values with inferred broker '%s' from %s.",
+            int(missing_broker_mask.sum()),
+            inferred_broker,
+            inference_source,
+        )
+    else:
+        review_reasons.append("broker_defaulted_unknown")
+        normalization_warnings.append("broker blank values defaulted to UNKNOWN")
+        inferred_fields["broker"] = "default_unknown"
+        logger.warning(
+            "Filled %s blank broker values with default broker '%s'.",
+            int(missing_broker_mask.sum()),
+            settings.default_broker_name,
+        )
+
+    frame.attrs["review_required"] = True
+    frame.attrs["review_reasons"] = tuple(dict.fromkeys(review_reasons))
+    frame.attrs["normalization_warnings"] = tuple(normalization_warnings)
+    frame.attrs["inferred_fields"] = inferred_fields
     return frame
 
 
@@ -291,6 +393,7 @@ def _derive_financial_values(frame: pd.DataFrame) -> None:
 
 
 def _drop_invalid_rows(frame: pd.DataFrame) -> tuple[pd.DataFrame, int, Counter[str]]:
+    frame_attrs = dict(frame.attrs)
     validation_rules = {
         "missing_client_name": frame["client_name"].eq("Unknown Client"),
         "missing_broker": frame["broker"].eq("UNKNOWN_BROKER"),
@@ -312,6 +415,7 @@ def _drop_invalid_rows(frame: pd.DataFrame) -> tuple[pd.DataFrame, int, Counter[
 
     invalid_row_count = int(invalid_mask.sum())
     cleaned = frame.loc[~invalid_mask].copy()
+    cleaned.attrs.update(frame_attrs)
     if validation_summary:
         logger.warning("Dropped %s invalid rows. Reasons: %s", invalid_row_count, dict(validation_summary))
     return cleaned, invalid_row_count, validation_summary
@@ -325,3 +429,68 @@ def _format_validation_summary(summary: Counter[str]) -> str:
 
 def _get_default_reference_date():
     return pd.Timestamp.now(tz=UTC).date()
+
+
+def _infer_broker_value(frame: pd.DataFrame) -> tuple[str | None, str]:
+    for column in ("broker", "custodian", "institution", "instituicao", "instituicao_financeira", "corretora"):
+        if column not in frame.columns:
+            continue
+        candidate = _pick_broker_candidate(frame[column])
+        if candidate is not None:
+            return candidate, f"column:{column}"
+
+    for column in ("advisorcode", "advisor_code", "advisor", "assessor", "codigo_assessor", "advisor code"):
+        if column not in frame.columns:
+            continue
+        advisor_values = [str(value) for value in frame[column].tolist() if not is_blankish(value)]
+        if advisor_values:
+            filename_candidate = _infer_broker_from_text(str(frame.attrs.get("source_filename", "")))
+            if filename_candidate is not None:
+                return filename_candidate, f"filename+{column}"
+
+    source_hints = [
+        str(frame.attrs.get("source_filename", "")),
+        str(frame.attrs.get("source_path", "")),
+        str(frame.attrs.get("parser_name", "")),
+    ]
+    for hint in source_hints:
+        candidate = _infer_broker_from_text(hint)
+        if candidate is not None:
+            return candidate, "source_metadata"
+
+    return None, "unresolved"
+
+
+def _pick_broker_candidate(series: pd.Series) -> str | None:
+    for value in series.tolist():
+        candidate = _infer_broker_from_text(str(value))
+        if candidate is not None:
+            return candidate
+    return None
+
+
+def _infer_broker_from_text(value: str) -> str | None:
+    normalized_value = normalize_lookup_text(value, "")
+    if not normalized_value:
+        return None
+
+    if normalized_value in BROKER_ALIASES:
+        return BROKER_ALIASES[normalized_value]
+
+    for alias, canonical_name in BROKER_ALIASES.items():
+        if alias and alias in normalized_value:
+            return canonical_name
+    return None
+
+
+def _build_missing_column_suggestions(missing_fields: list[str]) -> str:
+    suggestions: list[str] = []
+    if "broker" in missing_fields:
+        suggestions.append("custodian/institution/corretora -> broker")
+    if "client_name" in missing_fields:
+        suggestions.append("cliente/client/investidor -> client_name")
+    if "asset_name" in missing_fields:
+        suggestions.append("ativo/asset/descricao -> asset_name")
+    if "quantity" in missing_fields:
+        suggestions.append("qtd/qtde/quantidade -> quantity")
+    return "; ".join(suggestions) or "Review the source headers and map them to the canonical portfolio fields"
