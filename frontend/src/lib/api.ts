@@ -579,6 +579,25 @@ function resolveDownloadFilename(response: Response, fallback: string) {
   return match?.[1] || fallback;
 }
 
+async function buildValidatedPdfBlob(response: Response) {
+  const contentType = response.headers.get("content-type")?.toLowerCase() || "";
+  const buffer = await response.arrayBuffer();
+  const bytes = new Uint8Array(buffer);
+  const signature = new TextDecoder("ascii").decode(bytes.slice(0, 4));
+
+  if (contentType.includes("application/pdf") && signature === "%PDF") {
+    return new Blob([buffer], { type: "application/pdf" });
+  }
+
+  const text = new TextDecoder("utf-8").decode(bytes);
+  try {
+    const payload = JSON.parse(text) as ErrorResponse;
+    throw new Error(payload.detail || "O backend nao retornou um PDF valido.");
+  } catch {
+    throw new Error("O backend respondeu sem um PDF valido para download.");
+  }
+}
+
 export async function downloadPortfolioPdfReport(filters?: {
   clientName?: string;
   assetClass?: string;
@@ -601,7 +620,7 @@ export async function downloadPortfolioPdfReport(filters?: {
     await throwApiError(response, "Nao foi possivel gerar o PDF executivo do portfolio.");
   }
 
-  const blob = await response.blob();
+  const blob = await buildValidatedPdfBlob(response);
   const filename = resolveDownloadFilename(response, "carteiraconsol_executive_portfolio_report.pdf");
   const url = window.URL.createObjectURL(blob);
   const anchor = window.document.createElement("a");
@@ -609,6 +628,8 @@ export async function downloadPortfolioPdfReport(filters?: {
   anchor.download = filename;
   window.document.body.appendChild(anchor);
   anchor.click();
-  anchor.remove();
-  window.URL.revokeObjectURL(url);
+  window.setTimeout(() => {
+    anchor.remove();
+    window.URL.revokeObjectURL(url);
+  }, 1000);
 }
