@@ -208,7 +208,7 @@ export async function loadLiveRecords() {
   return joinSnapshot(snapshot.clients, snapshot.accounts, snapshot.assets, snapshot.positions);
 }
 
-function joinSnapshot(clients: ClientApi[], accounts: AccountApi[], assets: AssetApi[], positions: PositionApi[]): PortfolioRecord[] {
+export function joinSnapshot(clients: ClientApi[], accounts: AccountApi[], assets: AssetApi[], positions: PositionApi[]): PortfolioRecord[] {
   const clientMap = new Map(clients.map((client) => [client.id, client]));
   const accountMap = new Map(accounts.map((account) => [account.id, account]));
   const assetMap = new Map(assets.map((asset) => [asset.id, asset]));

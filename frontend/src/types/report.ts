@@ -34,6 +34,25 @@ export type InsightItem = {
   body: string;
 };
 
+export type DashboardFilters = {
+  clientName: string;
+  assetClass: string;
+  referenceDate: string;
+};
+
+export type DashboardData = {
+  asOfDate: string | null;
+  metrics: MetricCard[];
+  assetAllocation: BreakdownItem[];
+  clientAllocation: BreakdownItem[];
+  topAssets: BreakdownItem[];
+  timeline: TimelinePoint[];
+  positions: PortfolioRecord[];
+  availableClients: string[];
+  availableAssetClasses: string[];
+  availableReferenceDates: string[];
+};
+
 export type PortfolioReport = {
   clientName: string;
   diagnosis: string;
@@ -80,7 +99,7 @@ export type UploadHistoryItem = UploadSummary & {
   timestamp: string;
 };
 
-export type WorkspaceView = "report" | "review";
+export type WorkspaceView = "report" | "review" | "dashboard";
 
 export type ReviewStatus = "pending" | "approved" | "rejected" | "not_required";
 

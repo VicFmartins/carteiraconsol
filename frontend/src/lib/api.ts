@@ -55,6 +55,13 @@ export type PositionApi = {
   reference_date: string;
 };
 
+export type PortfolioSnapshotApi = {
+  clients: ClientApi[];
+  accounts: AccountApi[];
+  assets: AssetApi[];
+  positions: PositionApi[];
+};
+
 export type UploadApi = {
   ingestion_report_id?: number;
   filename: string;
@@ -390,7 +397,7 @@ export async function reprocessIngestionReport(reportId: number) {
   return assertUploadPayload(responsePayload.data);
 }
 
-export async function fetchPortfolioSnapshot() {
+export async function fetchPortfolioSnapshot(): Promise<PortfolioSnapshotApi> {
   const [clients, accounts, assets, positions] = await Promise.all([
     fetchPaginated<ClientApi>("/clients"),
     fetchPaginated<AccountApi>("/accounts"),

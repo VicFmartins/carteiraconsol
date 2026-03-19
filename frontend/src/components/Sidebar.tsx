@@ -82,6 +82,11 @@ function WorkspaceModeCard({
       helper: "Upload, ETL e preview executivo da carteira."
     },
     {
+      value: "dashboard",
+      label: "Dashboard",
+      helper: "KPIs, alocacao e exposicao com dados vivos da API."
+    },
+    {
       value: "review",
       label: "Review Queue",
       helper: "Fila para validar ingestoes com baixa confianca.",

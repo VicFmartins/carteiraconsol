@@ -1,19 +1,24 @@
 import { useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
+import DashboardWorkspace from "./components/DashboardWorkspace";
 import EmptyState from "./components/EmptyState";
 import ReportCanvas from "./components/ReportCanvas";
 import ReviewQueueWorkspace from "./components/ReviewQueueWorkspace";
 import Sidebar from "./components/Sidebar";
 import { mockPortfolioRecords } from "./data/mockReport";
 import {
+  fetchPortfolioSnapshot,
   fetchIngestionReport,
   fetchIngestionReports,
   reprocessIngestionReport,
   updateIngestionReportReview,
   uploadPortfolioFile
 } from "./lib/api";
+import { buildDashboardData } from "./lib/dashboardBuilder";
 import { buildReport, loadLiveRecords } from "./lib/reportBuilder";
 import type {
   ApiStatus,
+  DashboardData,
+  DashboardFilters,
   IngestionReport,
   PortfolioRecord,
   PortfolioReport,
@@ -86,6 +91,14 @@ export default function App() {
   const [reviewActionLoading, setReviewActionLoading] = useState(false);
   const [reviewError, setReviewError] = useState<string | null>(null);
   const [reviewFeedback, setReviewFeedback] = useState<string | null>(null);
+  const [dashboardSnapshot, setDashboardSnapshot] = useState<Awaited<ReturnType<typeof fetchPortfolioSnapshot>> | null>(null);
+  const [dashboardLoading, setDashboardLoading] = useState(false);
+  const [dashboardError, setDashboardError] = useState<string | null>(null);
+  const [dashboardFilters, setDashboardFilters] = useState<DashboardFilters>({
+    clientName: "",
+    assetClass: "",
+    referenceDate: ""
+  });
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
@@ -137,6 +150,9 @@ export default function App() {
   }, [clientName, diagnosis, records, reportSourceLabel]);
 
   const sourceContext = useMemo(() => {
+    if (workspaceView === "dashboard") {
+      return "Painel executivo com KPIs e alocacao construidos a partir do snapshot vivo da API";
+    }
     if (workspaceView === "review") {
       return selectedReviewReport
         ? `Revisando ingestao #${selectedReviewReport.id} - ${selectedReviewReport.filename}`
@@ -152,6 +168,13 @@ export default function App() {
     () => reviewReports.filter((item) => item.reviewStatus === "pending" || item.reviewRequired).length,
     [reviewReports]
   );
+
+  const dashboardData: DashboardData | null = useMemo(() => {
+    if (!dashboardSnapshot) {
+      return null;
+    }
+    return buildDashboardData(dashboardSnapshot, dashboardFilters);
+  }, [dashboardFilters, dashboardSnapshot]);
 
   function appendUploadHistory(item: UploadHistoryItem) {
     setUploadHistory((current) => [item, ...current].slice(0, MAX_UPLOAD_HISTORY_ITEMS));
@@ -204,6 +227,26 @@ export default function App() {
     }
   }
 
+  async function loadDashboardSnapshot(options?: { silent?: boolean }) {
+    if (!options?.silent) {
+      setDashboardLoading(true);
+      setDashboardError(null);
+    }
+
+    try {
+      const snapshot = await fetchPortfolioSnapshot();
+      setDashboardSnapshot(snapshot);
+    } catch (error) {
+      if (!options?.silent) {
+        setDashboardError(error instanceof Error ? error.message : "Nao foi possivel carregar o dashboard ao vivo.");
+      }
+    } finally {
+      if (!options?.silent) {
+        setDashboardLoading(false);
+      }
+    }
+  }
+
   useEffect(() => {
     void loadReviewQueue("pending", { silent: true });
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -216,6 +259,17 @@ export default function App() {
     void loadReviewQueue(reviewFilter);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [workspaceView, reviewFilter]);
+
+  useEffect(() => {
+    if (workspaceView !== "dashboard") {
+      return;
+    }
+    if (dashboardSnapshot) {
+      return;
+    }
+    void loadDashboardSnapshot();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [workspaceView, dashboardSnapshot]);
 
   function handleFillMockData() {
     setUploadName(null);
@@ -290,6 +344,7 @@ export default function App() {
       const nextRecords = await refreshSnapshotAfterUpload();
       mountPreview(nextRecords, "Snapshot atualizado apos upload no backend");
       setUploadState("success");
+      void loadDashboardSnapshot({ silent: workspaceView !== "dashboard" });
 
       void loadReviewQueue(reviewFilter, {
         preferredReportId: uploadResult.ingestion_report_id,
@@ -327,6 +382,7 @@ export default function App() {
       setUploadState("idle");
       setWorkspaceView("report");
       mountPreview(nextRecords, "Snapshot conectado ao backend CarteiraConsol");
+      void loadDashboardSnapshot({ silent: true });
     } catch (error) {
       setLastError(error instanceof Error ? error.message : "Nao foi possivel carregar os dados atuais da plataforma.");
     } finally {
@@ -419,6 +475,16 @@ export default function App() {
     window.print();
   }
 
+  function handleDashboardFilterChange(field: keyof DashboardFilters, value: string) {
+    setDashboardFilters((current) => {
+      const next = { ...current, [field]: value };
+      if (field === "clientName" || field === "assetClass") {
+        next.referenceDate = "";
+      }
+      return next;
+    });
+  }
+
   return (
     <div className="min-h-screen px-4 py-4 md:px-6 lg:px-8">
       <div className="mx-auto grid min-h-[calc(100vh-2rem)] max-w-[1680px] gap-4 lg:grid-cols-[360px_minmax(0,1fr)]">
@@ -466,6 +532,15 @@ export default function App() {
               onSelectReport={(reportId) => void handleSelectReviewReport(reportId)}
               onReviewAction={(status) => void handleReviewAction(status)}
               onApproveAndReprocess={() => void handleApproveAndReprocess()}
+            />
+          ) : workspaceView === "dashboard" ? (
+            <DashboardWorkspace
+              data={dashboardData}
+              filters={dashboardFilters}
+              loading={dashboardLoading}
+              error={dashboardError}
+              onRefresh={() => void loadDashboardSnapshot()}
+              onFilterChange={handleDashboardFilterChange}
             />
           ) : !report ? (
             <EmptyState
