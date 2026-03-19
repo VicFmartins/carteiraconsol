@@ -13,11 +13,16 @@ export default function HorizontalBars({ items, tone = "blue" }: HorizontalBarsP
   return (
     <div className="space-y-4">
       {items.map((item, index) => (
-        <div key={item.label} className="rounded-[22px] border border-slate-100 bg-slate-50 px-4 py-4">
+        <div key={item.label} className="rounded-[22px] border border-slate-100 bg-slate-50 px-4 py-4" title={`${item.label}: ${formatCurrency(item.value)}`}>
           <div className="mb-3 flex items-center justify-between gap-4">
-            <div>
+            <div className="flex min-w-0 items-start gap-3">
+              <div className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-white text-[11px] font-bold text-slate-500">
+                {index + 1}
+              </div>
+              <div className="min-w-0">
               <div className="text-sm font-semibold text-slate-950">{item.label}</div>
-              <div className="mt-1 text-xs uppercase tracking-[0.18em] text-slate-400">{formatPercent(item.share)}</div>
+                <div className="mt-1 text-xs uppercase tracking-[0.18em] text-slate-400">{formatPercent(item.share)}</div>
+              </div>
             </div>
             <div className="text-right text-sm font-semibold text-slate-700">{formatCurrency(item.value)}</div>
           </div>

@@ -36,30 +36,47 @@ function buildTopAssets(records: PortfolioRecord[]): BreakdownItem[] {
 }
 
 function buildMetrics(records: PortfolioRecord[]): MetricCard[] {
+  const totalValue = records.reduce((sum, record) => sum + record.totalValue, 0);
+  const totalClients = new Set(records.map((record) => record.clientName)).size;
+  const totalAssets = new Set(records.map((record) => record.ticker || record.assetName)).size;
+  const totalAccounts = new Set(records.map((record) => `${record.clientName}|${record.broker}`)).size;
+
   return [
     {
-      label: "Portfolio Value",
-      value: records.reduce((sum, record) => sum + record.totalValue, 0),
+      label: "Total Portfolio Value",
+      value: totalValue,
       tone: "blue",
-      format: "currency"
+      format: "currency",
+      helper: "Valor consolidado no recorte atual",
+      icon: "PV",
+      trendLabel: "Snapshot atual"
     },
     {
-      label: "Active Clients",
-      value: new Set(records.map((record) => record.clientName)).size,
+      label: "Number of Clients",
+      value: totalClients,
       tone: "teal",
-      format: "number"
+      format: "number",
+      helper: "Clientes com posicoes neste corte",
+      icon: "CL",
+      trendLabel: "Base ativa"
     },
     {
       label: "Tracked Assets",
-      value: new Set(records.map((record) => record.ticker || record.assetName)).size,
+      value: totalAssets,
       tone: "gold",
-      format: "number"
+      format: "number",
+      helper: "Ativos unicos monitorados",
+      icon: "AT",
+      trendLabel: "Universo atual"
     },
     {
       label: "Active Accounts",
-      value: new Set(records.map((record) => `${record.clientName}|${record.broker}`)).size,
+      value: totalAccounts,
       tone: "slate",
-      format: "number"
+      format: "number",
+      helper: "Relacionamentos cliente-corretora",
+      icon: "AC",
+      trendLabel: "Custodia viva"
     }
   ];
 }
@@ -90,7 +107,7 @@ export function buildDashboardData(snapshot: PortfolioSnapshotApi, filters: Dash
     clientAllocation: buildBreakdown(currentRecords, (record) => record.clientName).slice(0, 8),
     topAssets: buildTopAssets(currentRecords),
     timeline: buildTimeline(scopedRecords),
-    positions: currentRecords.slice(0, 15),
+    positions: currentRecords.slice(0, 20),
     availableClients,
     availableAssetClasses,
     availableReferenceDates

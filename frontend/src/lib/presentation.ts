@@ -10,4 +10,4 @@ export function assetClassLabel(value: string) {
   return assetClassLabels[value] ?? value.replace(/_/g, " ");
 }
 
-export const chartPalette = ["#38bdf8", "#2563eb", "#14b8a6", "#f59e0b", "#8b5cf6", "#0f766e"];
+export const chartPalette = ["#0f766e", "#0ea5e9", "#1d4ed8", "#14b8a6", "#0891b2", "#334155", "#16a34a", "#f59e0b"];

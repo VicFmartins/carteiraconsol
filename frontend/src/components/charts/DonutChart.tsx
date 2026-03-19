@@ -33,22 +33,25 @@ export default function DonutChart({ items }: DonutChartProps) {
                 strokeDasharray={`${dash} ${circumference - dash}`}
                 strokeDashoffset={-currentOffset}
                 strokeLinecap="round"
-              />
+              >
+                <title>{`${item.label}: ${formatCurrency(item.value)} (${formatPercent(item.share)})`}</title>
+              </circle>
             );
           })}
         </svg>
 
         <div className="absolute inset-0 flex flex-col items-center justify-center text-center">
-          <p className="text-xs font-semibold uppercase tracking-[0.24em] text-slate-400">AUM</p>
+          <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-slate-400">Total Portfolio</p>
           <p className="mt-2 max-w-[120px] font-display text-xl font-bold leading-tight text-slate-950">
             {formatCurrency(items.reduce((sum, item) => sum + item.value, 0))}
           </p>
+          <p className="mt-2 text-[11px] uppercase tracking-[0.16em] text-slate-400">{items.length} segmentos</p>
         </div>
       </div>
 
       <div className="mt-6 w-full space-y-3">
         {items.map((item, index) => (
-          <div key={item.label} className="flex items-center justify-between gap-3 text-sm">
+          <div key={item.label} className="flex items-center justify-between gap-3 rounded-2xl border border-slate-100 bg-slate-50 px-4 py-3 text-sm">
             <div className="flex items-center gap-3">
               <span
                 className="h-3 w-3 rounded-full"

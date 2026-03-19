@@ -16,6 +16,9 @@ export type MetricCard = {
   value: number;
   tone: "blue" | "teal" | "gold" | "slate";
   format: "currency" | "number";
+  helper?: string;
+  icon?: string;
+  trendLabel?: string;
 };
 
 export type BreakdownItem = {
