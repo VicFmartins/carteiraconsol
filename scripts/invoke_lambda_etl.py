@@ -37,6 +37,30 @@ def _build_payload(args: argparse.Namespace) -> dict:
             ]
         }
 
+    if args.sqs_event_key:
+        settings = get_settings()
+        nested_event = {
+            "Records": [
+                {
+                    "eventSource": "aws:s3",
+                    "eventName": "ObjectCreated:Put",
+                    "s3": {
+                        "bucket": {"name": settings.s3_bucket_name},
+                        "object": {"key": args.sqs_event_key},
+                    },
+                }
+            ]
+        }
+        return {
+            "Records": [
+                {
+                    "messageId": "local-sqs-message",
+                    "eventSource": "aws:sqs",
+                    "body": json.dumps(nested_event),
+                }
+            ]
+        }
+
     if args.s3_key:
         return {"s3_key": args.s3_key}
 
@@ -46,7 +70,7 @@ def _build_payload(args: argparse.Namespace) -> dict:
     if args.source_path:
         return {"source_path": args.source_path}
 
-    raise ValueError("Provide --payload-file, --s3-key, --s3-prefix, --s3-event-key, or --source-path.")
+    raise ValueError("Provide --payload-file, --s3-key, --s3-prefix, --s3-event-key, --sqs-event-key, or --source-path.")
 
 
 def main() -> None:
@@ -58,6 +82,11 @@ def main() -> None:
         "--s3-event-key",
         dest="s3_event_key",
         help="Invoke the Lambda handler with a simulated S3 event using the configured bucket and this object key.",
+    )
+    parser.add_argument(
+        "--sqs-event-key",
+        dest="sqs_event_key",
+        help="Invoke the Lambda handler with a simulated SQS message wrapping an S3 event for this object key.",
     )
     parser.add_argument("--source-path", dest="source_path", help="Invoke the Lambda handler with a local source_path payload.")
     args = parser.parse_args()

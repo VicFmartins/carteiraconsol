@@ -15,6 +15,7 @@ from app.core.exceptions import ApplicationError, ETLInputError, ResourceNotFoun
 from app.db.session import session_scope
 from app.etl.extract.file_reader import discover_input_files
 from app.etl.pipeline import PortfolioETLPipeline
+from app.lambda_handlers.event_parser import LambdaInvocation, S3EventObject
 from app.models.ingestion_report import IngestionReport
 from app.schemas.etl import ETLFileResult, ETLRunResponse, UploadResponse
 from app.services.ingestion_report_service import IngestionReportService, detect_ingestion_type
@@ -65,6 +66,46 @@ class ETLService:
             for s3_key in s3_keys
         ]
         return self._build_response(results)
+
+    def process_s3_object(
+        self,
+        *,
+        bucket_name: str,
+        object_key: str,
+        source_type: str = "lambda_s3",
+    ) -> tuple:
+        filename = Path(object_key).name or "s3_ingestion"
+        return self._run_with_report(
+            source_type="s3",
+            report_source_type=source_type,
+            s3_bucket_name=bucket_name,
+            s3_key=object_key,
+            filename=filename,
+            detected_type=detect_ingestion_type(object_key),
+        )
+
+    def run_many_s3_objects(
+        self,
+        s3_objects: Iterable[S3EventObject],
+        *,
+        source_type: str = "lambda_s3",
+    ) -> ETLRunResponse:
+        results = [
+            self.process_s3_object(
+                bucket_name=s3_object.bucket_name,
+                object_key=s3_object.object_key,
+                source_type=source_type,
+            )
+            for s3_object in s3_objects
+        ]
+        return self._build_response(results)
+
+    def run_from_lambda_invocation(self, invocation: LambdaInvocation) -> ETLRunResponse:
+        if invocation.invocation_type == "s3_event":
+            return self.run_many_s3_objects(invocation.s3_objects, source_type="lambda_s3")
+        if invocation.invocation_type == "direct_s3":
+            return self.run_from_s3(s3_key=invocation.s3_key, s3_prefix=invocation.s3_prefix)
+        return self.run(source_path=invocation.source_path)
 
     def save_uploaded_file(self, filename: str, file_stream: BinaryIO) -> Path:
         cleaned_name = Path(filename or "").name
@@ -218,12 +259,15 @@ class ETLService:
         source_path: Path | None = None,
         s3_key: str | None = None,
         s3_prefix: str | None = None,
+        s3_bucket_name: str | None = None,
+        report_source_type: str | None = None,
     ) -> tuple:
         source_reference = str(source_path) if source_path is not None else (s3_key or s3_prefix or filename)
         try:
             summary = self.pipeline.run(
                 source_path,
                 source_type=source_type,
+                s3_bucket_name=s3_bucket_name,
                 s3_key=s3_key,
                 s3_prefix=s3_prefix,
             )
@@ -232,7 +276,7 @@ class ETLService:
             report = self.ingestion_reports.create_success_report(
                 summary=summary,
                 filename=filename,
-                source_type=source_type,
+                source_type=report_source_type or source_type,
                 detected_type=resolved_detected_type,
                 message=message,
             )
@@ -241,7 +285,7 @@ class ETLService:
             self.ingestion_reports.create_failure_report(
                 filename=filename,
                 source_file=source_reference,
-                source_type=source_type,
+                source_type=report_source_type or source_type,
                 detected_type=detected_type,
                 message=exc.message,
             )
@@ -250,7 +294,7 @@ class ETLService:
             self.ingestion_reports.create_failure_report(
                 filename=filename,
                 source_file=source_reference,
-                source_type=source_type,
+                source_type=report_source_type or source_type,
                 detected_type=detected_type,
                 message=str(exc) or "Unexpected ingestion failure.",
             )

@@ -1,8 +1,9 @@
 import json
 from contextlib import contextmanager
+from pathlib import Path
 
-from app.core.exceptions import ETLInputError
 from app.lambda_handlers import etl_handler
+from app.lambda_handlers.event_parser import extract_s3_objects, resolve_lambda_invocation
 from app.schemas.etl import ETLFileResult, ETLRunResponse
 
 
@@ -46,10 +47,11 @@ def test_lambda_handler_accepts_direct_s3_payload(monkeypatch) -> None:
         def __init__(self, session) -> None:
             captured["session"] = session
 
-        def run_from_s3(self, *, s3_key=None, s3_prefix=None):
-            captured["s3_key"] = s3_key
-            captured["s3_prefix"] = s3_prefix
-            return build_result(f"s3://bucket/{s3_key}")
+        def run_from_lambda_invocation(self, invocation):
+            captured["invocation_type"] = invocation.invocation_type
+            captured["s3_key"] = invocation.s3_key
+            captured["s3_prefix"] = invocation.s3_prefix
+            return build_result(f"s3://bucket/{invocation.s3_key}")
 
     monkeypatch.setattr(etl_handler, "get_settings", lambda: DummySettings())
     monkeypatch.setattr(etl_handler, "init_db", lambda: None)
@@ -62,6 +64,8 @@ def test_lambda_handler_accepts_direct_s3_payload(monkeypatch) -> None:
     body = json.loads(response["body"])
     assert body["status"] == "success"
     assert body["files_processed"] == 1
+    assert body["invocation"]["type"] == "direct_s3"
+    assert captured["invocation_type"] == "direct_s3"
     assert captured["s3_key"] == "incoming/sample_portfolio.csv"
 
 
@@ -72,9 +76,10 @@ def test_lambda_handler_accepts_s3_event_payload(monkeypatch) -> None:
         def __init__(self, session) -> None:
             captured["session"] = session
 
-        def run_many_from_s3(self, s3_keys):
-            captured["s3_keys"] = list(s3_keys)
-            return build_result(f"s3://bucket/{captured['s3_keys'][0]}")
+        def run_from_lambda_invocation(self, invocation):
+            captured["invocation_type"] = invocation.invocation_type
+            captured["s3_objects"] = list(invocation.s3_objects)
+            return build_result(f"s3://{captured['s3_objects'][0].bucket_name}/{captured['s3_objects'][0].object_key}")
 
     monkeypatch.setattr(etl_handler, "get_settings", lambda: DummySettings())
     monkeypatch.setattr(etl_handler, "init_db", lambda: None)
@@ -98,26 +103,32 @@ def test_lambda_handler_accepts_s3_event_payload(monkeypatch) -> None:
     assert response["statusCode"] == 200
     body = json.loads(response["body"])
     assert body["status"] == "success"
-    assert captured["s3_keys"] == ["incoming/sample_portfolio.csv"]
+    assert body["invocation"]["type"] == "s3_event"
+    assert captured["invocation_type"] == "s3_event"
+    assert captured["s3_objects"][0].bucket_name == "carteiraconsol-vi-001"
+    assert captured["s3_objects"][0].object_key == "incoming/sample_portfolio.csv"
 
 
-def test_lambda_handler_rejects_bucket_mismatch(monkeypatch) -> None:
-    monkeypatch.setattr(etl_handler, "get_settings", lambda: DummySettings())
+def test_lambda_event_parser_supports_sqs_wrapped_s3_event() -> None:
+    fixture_path = Path("tests/fixtures/lambda_sqs_s3_event.json")
+    payload = json.loads(fixture_path.read_text(encoding="utf-8"))
 
-    response = etl_handler.handler(
-        {
-            "Records": [
-                {
-                    "s3": {
-                        "bucket": {"name": "different-bucket"},
-                        "object": {"key": "incoming%2Fsample_portfolio.csv"},
-                    }
-                }
-            ]
-        },
-        None,
-    )
+    invocation = resolve_lambda_invocation(payload)
 
-    assert response["statusCode"] == 400
-    body = json.loads(response["body"])
-    assert body["error"]["code"] == "etl_input_error"
+    assert invocation.invocation_type == "s3_event"
+    assert len(invocation.s3_objects) == 1
+    assert invocation.s3_objects[0].bucket_name == "carteiraconsol-vi-001"
+    assert invocation.s3_objects[0].object_key == "incoming/sample_portfolio.csv"
+    assert invocation.s3_objects[0].delivery_source == "sqs"
+
+
+def test_lambda_event_parser_loads_direct_s3_fixture() -> None:
+    fixture_path = Path("tests/fixtures/lambda_s3_event.json")
+    payload = json.loads(fixture_path.read_text(encoding="utf-8"))
+
+    objects = extract_s3_objects(payload)
+
+    assert len(objects) == 1
+    assert objects[0].bucket_name == "carteiraconsol-vi-001"
+    assert objects[0].object_key == "incoming/sample_portfolio.csv"
+    assert objects[0].delivery_source == "s3"

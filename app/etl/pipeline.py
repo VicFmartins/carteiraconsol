@@ -35,12 +35,14 @@ class PortfolioETLPipeline:
         source_path: Path | None = None,
         *,
         source_type: str = "local",
+        s3_bucket_name: str | None = None,
         s3_key: str | None = None,
         s3_prefix: str | None = None,
     ) -> ETLFileSummary:
         source_label, raw_reference, raw_file_path = self._resolve_source(
             source_path=source_path,
             source_type=source_type,
+            s3_bucket_name=s3_bucket_name,
             s3_key=s3_key,
             s3_prefix=s3_prefix,
         )
@@ -112,11 +114,16 @@ class PortfolioETLPipeline:
         *,
         source_path: Path | None,
         source_type: str,
+        s3_bucket_name: str | None,
         s3_key: str | None,
         s3_prefix: str | None,
     ) -> tuple[str, str, Path]:
         if source_type == "s3":
-            source_uri, local_path = self.storage.fetch_s3_file_to_raw(s3_key=s3_key, s3_prefix=s3_prefix)
+            source_uri, local_path = self.storage.fetch_s3_file_to_raw(
+                s3_key=s3_key,
+                s3_prefix=s3_prefix,
+                bucket_name=s3_bucket_name,
+            )
             return source_uri, source_uri, local_path
 
         if source_path is None:

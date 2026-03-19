@@ -688,12 +688,66 @@ O handler ETL aceita:
 - payload direto com `s3_key`
 - payload com `source_path`
 - evento S3 com `Records[]`
+- evento SQS contendo um evento S3 no `body`
+
+Fluxo cloud-ready suportado:
+
+```text
+S3 object created
+    ↓
+AWS Lambda event (ou SQS contendo o evento S3)
+    ↓
+app.lambda_handlers.etl_handler.handler(...)
+    ↓
+ETLService.run_from_lambda_invocation(...)
+    ↓
+PortfolioETLPipeline
+    ↓
+PostgreSQL + ingestion_reports
+```
+
+Observabilidade mantida no fluxo Lambda:
+
+- `source_type` indica `lambda_s3` quando a execução parte de um evento
+- `source_file` e `raw_file` preservam a URI `s3://bucket/key` quando disponível
+- `ingestion_reports` continuam registrando:
+  - status
+  - parser
+  - review metadata
+  - confidence
+  - linhas processadas/puladas
 
 Script local de simulação:
 
 ```powershell
 python scripts/invoke_lambda_etl.py --s3-key "incoming/sample_portfolio.csv"
 ```
+
+Simulando um evento S3 direto:
+
+```powershell
+python scripts/invoke_lambda_etl.py --s3-event-key "incoming/sample_portfolio.csv"
+```
+
+Simulando um evento SQS contendo um evento S3:
+
+```powershell
+python scripts/invoke_lambda_etl.py --sqs-event-key "incoming/sample_portfolio.csv"
+```
+
+Também é possível usar fixtures locais:
+
+```powershell
+python scripts/invoke_lambda_etl.py --payload-file "tests/fixtures/lambda_s3_event.json"
+python scripts/invoke_lambda_etl.py --payload-file "tests/fixtures/lambda_sqs_s3_event.json"
+```
+
+O que ainda fica para a próxima etapa de AWS real:
+
+- infraestrutura IaC (Terraform/CDK)
+- permissões IAM e policies do bucket
+- fila SQS real para retries e desacoplamento
+- DLQ e observabilidade operacional em CloudWatch
 
 ## 📥 Suporte a Inputs Reais da XP
 
