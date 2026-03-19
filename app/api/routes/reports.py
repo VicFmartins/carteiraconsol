@@ -32,5 +32,9 @@ def download_portfolio_pdf_report(
         reference_date=reference_date,
     )
     filename = "carteiraconsol_executive_portfolio_report.pdf"
-    headers = {"Content-Disposition": f'attachment; filename="{filename}"'}
+    headers = {
+        "Content-Disposition": f'attachment; filename="{filename}"',
+        "Cache-Control": "no-store",
+        "X-Content-Type-Options": "nosniff",
+    }
     return StreamingResponse(BytesIO(pdf_bytes), media_type="application/pdf", headers=headers)

@@ -585,7 +585,7 @@ async function buildValidatedPdfBlob(response: Response) {
   const bytes = new Uint8Array(buffer);
   const signature = new TextDecoder("ascii").decode(bytes.slice(0, 4));
 
-  if (contentType.includes("application/pdf") && signature === "%PDF") {
+  if (signature === "%PDF") {
     return new Blob([buffer], { type: "application/pdf" });
   }
 
@@ -594,7 +594,8 @@ async function buildValidatedPdfBlob(response: Response) {
     const payload = JSON.parse(text) as ErrorResponse;
     throw new Error(payload.detail || "O backend nao retornou um PDF valido.");
   } catch {
-    throw new Error("O backend respondeu sem um PDF valido para download.");
+    const contentHint = contentType ? ` Conteudo recebido: ${contentType}.` : "";
+    throw new Error(`O backend respondeu sem um PDF valido para download.${contentHint}`);
   }
 }
 
@@ -610,7 +611,13 @@ export async function downloadPortfolioPdfReport(filters?: {
         client_name: filters?.clientName || undefined,
         asset_class: filters?.assetClass || undefined,
         reference_date: filters?.referenceDate || undefined
-      })
+      }),
+      {
+        headers: {
+          Accept: "application/pdf"
+        },
+        cache: "no-store"
+      }
     );
   } catch {
     throw new Error("Nao foi possivel conectar ao backend para gerar o PDF executivo.");
@@ -631,5 +638,5 @@ export async function downloadPortfolioPdfReport(filters?: {
   window.setTimeout(() => {
     anchor.remove();
     window.URL.revokeObjectURL(url);
-  }, 1000);
+  }, 3000);
 }

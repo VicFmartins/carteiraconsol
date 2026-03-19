@@ -5,6 +5,7 @@ import LoginScreen from "./components/LoginScreen";
 import ReportCanvas from "./components/ReportCanvas";
 import ReviewQueueWorkspace from "./components/ReviewQueueWorkspace";
 import Sidebar from "./components/Sidebar";
+import WorkspaceErrorBoundary from "./components/WorkspaceErrorBoundary";
 import { useAuth } from "./contexts/AuthContext";
 import { mockPortfolioRecords } from "./data/mockReport";
 import {
@@ -73,6 +74,42 @@ function sortReviewReports(reports: IngestionReport[]) {
   });
 }
 
+function isLegacyTechnicalFailure(report: IngestionReport) {
+  return report.status === "error";
+}
+
+function filterVisibleReviewReports(reports: IngestionReport[], filter: ReviewQueueFilter) {
+  if (filter === "recent") {
+    return reports;
+  }
+
+  return reports.filter((report) => !isLegacyTechnicalFailure(report));
+}
+
+function pickPreferredReviewReport(
+  reports: IngestionReport[],
+  options?: {
+    preferredReportId?: number;
+    currentSelectedId?: number | null;
+    fallbackSelected?: IngestionReport | null;
+  }
+) {
+  const targetId = options?.preferredReportId ?? options?.currentSelectedId ?? null;
+  const targetedReport = targetId ? reports.find((item) => item.id === targetId) ?? null : null;
+  if (targetedReport) {
+    return targetedReport;
+  }
+
+  if (options?.fallbackSelected) {
+    const fallbackFromList = reports.find((item) => item.id === options.fallbackSelected?.id) ?? null;
+    if (fallbackFromList) {
+      return fallbackFromList;
+    }
+  }
+
+  return reports.find((item) => !isLegacyTechnicalFailure(item)) ?? reports[0] ?? null;
+}
+
 export default function App() {
   const { user, isAuthenticated, loading: authLoading, login, logout } = useAuth();
   const [clientName, setClientName] = useState("");
@@ -90,6 +127,7 @@ export default function App() {
   const [workspaceView, setWorkspaceView] = useState<WorkspaceView>("report");
   const [reviewFilter, setReviewFilter] = useState<ReviewQueueFilter>("pending");
   const [reviewReports, setReviewReports] = useState<IngestionReport[]>([]);
+  const [hiddenReviewReportsCount, setHiddenReviewReportsCount] = useState(0);
   const [selectedReviewReport, setSelectedReviewReport] = useState<IngestionReport | null>(null);
   const [reviewLoading, setReviewLoading] = useState(false);
   const [reviewActionLoading, setReviewActionLoading] = useState(false);
@@ -146,13 +184,18 @@ export default function App() {
       return;
     }
 
-    setReport(
-      buildReport(records, {
-        clientName,
-        diagnosis,
-        sourceLabel: reportSourceLabel
-      })
-    );
+    try {
+      setReport(
+        buildReport(records, {
+          clientName,
+          diagnosis,
+          sourceLabel: reportSourceLabel
+        })
+      );
+    } catch (error) {
+      setReport(null);
+      setLastError(error instanceof Error ? error.message : "Nao foi possivel montar a previa executiva.");
+    }
   }, [clientName, diagnosis, records, reportSourceLabel]);
 
   const sourceContext = useMemo(() => {
@@ -171,7 +214,7 @@ export default function App() {
   }, [report?.sourceLabel, reportSourceLabel, selectedReviewReport, uploadName, workspaceView]);
 
   const reviewQueueCount = useMemo(
-    () => reviewReports.filter((item) => item.reviewStatus === "pending" || item.reviewRequired).length,
+    () => reviewReports.filter((item) => !isLegacyTechnicalFailure(item) && (item.reviewStatus === "pending" || item.reviewRequired)).length,
     [reviewReports]
   );
 
@@ -179,7 +222,12 @@ export default function App() {
     if (!dashboardSnapshot) {
       return null;
     }
-    return buildDashboardData(dashboardSnapshot, dashboardFilters);
+    try {
+      return buildDashboardData(dashboardSnapshot, dashboardFilters);
+    } catch (error) {
+      console.error("Dashboard snapshot render failure", error);
+      return null;
+    }
   }, [dashboardFilters, dashboardSnapshot]);
 
   function appendUploadHistory(item: UploadHistoryItem) {
@@ -220,13 +268,19 @@ export default function App() {
     }
 
     try {
-      const nextReports = sortReviewReports(await fetchIngestionReports(resolveReviewFilters(filter)));
-      setReviewReports(nextReports);
-
-      const targetId = options?.preferredReportId ?? selectedReviewReport?.id ?? null;
-      const selectedFromList = targetId ? nextReports.find((item) => item.id === targetId) ?? null : null;
-      setSelectedReviewReport(selectedFromList ?? options?.fallbackSelected ?? nextReports[0] ?? null);
+      const fetchedReports = sortReviewReports(await fetchIngestionReports(resolveReviewFilters(filter)));
+      const visibleReports = filterVisibleReviewReports(fetchedReports, filter);
+      setHiddenReviewReportsCount(Math.max(fetchedReports.length - visibleReports.length, 0));
+      setReviewReports(visibleReports);
+      setSelectedReviewReport(
+        pickPreferredReviewReport(visibleReports, {
+          preferredReportId: options?.preferredReportId,
+          currentSelectedId: selectedReviewReport?.id ?? null,
+          fallbackSelected: options?.fallbackSelected ?? null
+        })
+      );
     } catch (error) {
+      setHiddenReviewReportsCount(0);
       if (!options?.silent) {
         setReviewError(error instanceof Error ? error.message : "Nao foi possivel carregar a fila de revisao.");
       }
@@ -362,21 +416,27 @@ export default function App() {
       appendUploadHistory(buildHistoryItem(latestSummary, latestSummary.outcome ?? "success"));
 
       setUploadState("processing");
-      const nextRecords = await refreshSnapshotAfterUpload();
-      mountPreview(nextRecords, "Snapshot atualizado apos upload no backend");
-      setUploadState("success");
-      void loadDashboardSnapshot({ silent: workspaceView !== "dashboard" });
-
       void loadReviewQueue(reviewFilter, {
         preferredReportId: uploadResult.ingestion_report_id,
         silent: workspaceView !== "review"
       });
+      void loadDashboardSnapshot({ silent: workspaceView !== "dashboard" });
+
+      try {
+        const nextRecords = await refreshSnapshotAfterUpload();
+        mountPreview(nextRecords, "Snapshot atualizado apos upload no backend");
+      } catch (refreshError) {
+        const refreshMessage =
+          refreshError instanceof Error ? refreshError.message : "A previa ainda nao foi recarregada automaticamente.";
+        setLastError(`O arquivo foi processado, mas a previa ainda nao foi recarregada automaticamente. ${refreshMessage}`);
+      }
+
+      setUploadState("success");
     } catch (error) {
       const message = error instanceof Error ? error.message : "Nao foi possivel enviar a planilha para o backend.";
-      setUploadState("error");
-      setLastError(message);
-
       if (!latestSummary) {
+        setUploadState("error");
+        setLastError(message);
         const fallbackSummary: UploadSummary = {
           outcome: "error",
           filename: file.name,
@@ -390,6 +450,9 @@ export default function App() {
         };
         setUploadSummary(fallbackSummary);
         appendUploadHistory(buildHistoryItem(fallbackSummary, "error", message));
+      } else {
+        setUploadState("success");
+        setLastError(`O arquivo foi processado, mas o workspace nao conseguiu concluir a atualizacao visual. ${message}`);
       }
     } finally {
       event.target.value = "";
@@ -531,6 +594,14 @@ export default function App() {
     }
   }
 
+  const workspaceResetKey = [
+    workspaceView,
+    report?.latestReferenceDate ?? "no-report",
+    uploadSummary?.processedAt ?? "no-upload",
+    String(selectedReviewReport?.id ?? "no-review"),
+    dashboardData?.asOfDate ?? "no-dashboard"
+  ].join("|");
+
   if (authLoading) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-[radial-gradient(circle_at_top,rgba(34,211,238,0.10),transparent_28%),linear-gradient(180deg,#07101f_0%,#081320_100%)] px-6 py-8 text-slate-200">
@@ -581,45 +652,54 @@ export default function App() {
         />
 
         <main className="min-w-0">
-          {workspaceView === "review" ? (
-            <ReviewQueueWorkspace
-              reports={reviewReports}
-              selectedReport={selectedReviewReport}
-              loading={reviewLoading}
-              actionLoading={reviewActionLoading}
-              error={reviewError}
-              feedback={reviewFeedback}
-              activeFilter={reviewFilter}
-              onFilterChange={setReviewFilter}
-              onRefresh={() => void loadReviewQueue(reviewFilter)}
-              onSelectReport={(reportId) => void handleSelectReviewReport(reportId)}
-              onReviewAction={(status) => void handleReviewAction(status)}
-              onApproveAndReprocess={() => void handleApproveAndReprocess()}
-            />
-          ) : workspaceView === "dashboard" ? (
-            <DashboardWorkspace
-              data={dashboardData}
-              filters={dashboardFilters}
-              loading={dashboardLoading}
-              pdfLoading={dashboardPdfLoading}
-              error={dashboardError}
-              actionError={dashboardActionError}
-              onRefresh={() => void loadDashboardSnapshot()}
-              onDownloadPdf={() => void handleDownloadDashboardPdf()}
-              onResetFilters={handleDashboardResetFilters}
-              onFilterChange={handleDashboardFilterChange}
-            />
-          ) : !report ? (
-            <EmptyState
-              apiStatus={apiStatus}
-              loadingLiveData={loadingLiveData}
-              onLoadLiveData={handleLoadLiveData}
-              onFillMockData={handleFillMockData}
-              onUploadSpreadsheet={handleSelectUpload}
-            />
-          ) : (
-            <ReportCanvas report={report} />
-          )}
+          <WorkspaceErrorBoundary
+            resetKey={workspaceResetKey}
+            onReset={() => {
+              setLastError("O workspace foi recuperado apos uma resposta inesperada.");
+              setDashboardActionError(null);
+            }}
+          >
+            {workspaceView === "review" ? (
+              <ReviewQueueWorkspace
+                reports={reviewReports}
+                hiddenTechnicalReportsCount={hiddenReviewReportsCount}
+                selectedReport={selectedReviewReport}
+                loading={reviewLoading}
+                actionLoading={reviewActionLoading}
+                error={reviewError}
+                feedback={reviewFeedback}
+                activeFilter={reviewFilter}
+                onFilterChange={setReviewFilter}
+                onRefresh={() => void loadReviewQueue(reviewFilter)}
+                onSelectReport={(reportId) => void handleSelectReviewReport(reportId)}
+                onReviewAction={(status) => void handleReviewAction(status)}
+                onApproveAndReprocess={() => void handleApproveAndReprocess()}
+              />
+            ) : workspaceView === "dashboard" ? (
+              <DashboardWorkspace
+                data={dashboardData}
+                filters={dashboardFilters}
+                loading={dashboardLoading}
+                pdfLoading={dashboardPdfLoading}
+                error={dashboardError}
+                actionError={dashboardActionError}
+                onRefresh={() => void loadDashboardSnapshot()}
+                onDownloadPdf={() => void handleDownloadDashboardPdf()}
+                onResetFilters={handleDashboardResetFilters}
+                onFilterChange={handleDashboardFilterChange}
+              />
+            ) : !report ? (
+              <EmptyState
+                apiStatus={apiStatus}
+                loadingLiveData={loadingLiveData}
+                onLoadLiveData={handleLoadLiveData}
+                onFillMockData={handleFillMockData}
+                onUploadSpreadsheet={handleSelectUpload}
+              />
+            ) : (
+              <ReportCanvas report={report} />
+            )}
+          </WorkspaceErrorBoundary>
         </main>
       </div>
     </div>

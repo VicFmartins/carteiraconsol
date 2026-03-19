@@ -3,13 +3,13 @@ import type { BreakdownItem, InsightItem, PortfolioRecord, PortfolioReport } fro
 
 const columnAliases: Record<string, string[]> = {
   clientName: ["cliente", "nome do cliente", "client", "client_name", "investidor"],
-  broker: ["corretora", "broker", "instituicao", "instituição", "plataforma"],
+  broker: ["corretora", "broker", "instituicao", "instituicao", "plataforma"],
   assetName: ["ativo", "produto", "asset", "descricao", "description", "nome do ativo"],
-  ticker: ["ticker", "codigo", "código", "symbol", "sigla"],
+  ticker: ["ticker", "codigo", "codigo", "symbol", "sigla"],
   quantity: ["qtd", "qtde", "quantidade", "quantity", "saldo", "closingquantity"],
-  avgPrice: ["preco medio", "preço médio", "avg price", "average price", "unit price", "closingunitprice"],
+  avgPrice: ["preco medio", "preco medio", "avg price", "average price", "unit price", "closingunitprice"],
   totalValue: ["valor total", "valor atual", "market value", "total value", "closingvalue", "grossvalue"],
-  referenceDate: ["data referencia", "data de referência", "reference date", "date", "effectivedate"],
+  referenceDate: ["data referencia", "data de referencia", "reference date", "date", "effectivedate"],
   riskProfile: ["perfil", "risk profile", "suitability", "risk_profile"]
 };
 
@@ -46,20 +46,30 @@ function parseNumber(value: unknown): number {
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
+function ensureFiniteNumber(value: number, fallback = 0) {
+  return Number.isFinite(value) ? value : fallback;
+}
+
+function sanitizeText(value: unknown, fallback: string) {
+  const text = typeof value === "string" ? value.trim() : String(value ?? "").trim();
+  return text || fallback;
+}
+
 function classifyAsset(assetName: string, ticker: string) {
   const value = `${assetName} ${ticker}`.toUpperCase();
 
   if (/(TESOURO|CDB|LCA|LFT|LTN|NTN|DEBENTURE|CRA|CRI|CPRF)/.test(value)) return "fixed_income";
   if (/(BTC|BITCOIN|ETH|ETHEREUM|SOL|CRYPTO)/.test(value)) return "crypto";
   if (/(FII|FUND|FUNDO|ETF|LISTADO)/.test(value)) return "funds";
-  if (/(ON|PN|\d{1,2}|AÇÃO|ACAO)/.test(value)) return "equities";
+  if (/(ON|PN|\d{1,2}|ACAO|ACAO)/.test(value)) return "equities";
   return "others";
 }
 
 function parseDate(value: unknown) {
   if (!value) return new Date().toISOString().slice(0, 10);
 
-  const text = String(value);
+  const text = String(value).trim();
+  if (!text) return new Date().toISOString().slice(0, 10);
   if (text.includes("T")) return text.slice(0, 10);
 
   const [first, second, third] = text.split(/[/-]/);
@@ -69,6 +79,36 @@ function parseDate(value: unknown) {
   }
 
   return text;
+}
+
+function normalizeReferenceDate(value: unknown) {
+  const fallback = new Date().toISOString().slice(0, 10);
+  if (!value) return fallback;
+
+  const normalized = parseDate(value);
+  const candidate = normalized.includes("T") || normalized.endsWith("Z") ? new Date(normalized) : new Date(`${normalized}T00:00:00`);
+  if (Number.isNaN(candidate.getTime())) {
+    return fallback;
+  }
+
+  return candidate.toISOString().slice(0, 10);
+}
+
+export function sanitizePortfolioRecords(records: PortfolioRecord[]) {
+  return records
+    .map((record) => ({
+      clientName: sanitizeText(record.clientName, "Cliente consolidado"),
+      riskProfile: sanitizeText(record.riskProfile, "moderado"),
+      broker: sanitizeText(record.broker, "UNKNOWN"),
+      assetClass: sanitizeText(record.assetClass, "others"),
+      ticker: sanitizeText(record.ticker, ""),
+      assetName: sanitizeText(record.assetName, sanitizeText(record.ticker, "Ativo")),
+      quantity: ensureFiniteNumber(record.quantity),
+      avgPrice: ensureFiniteNumber(record.avgPrice),
+      totalValue: ensureFiniteNumber(record.totalValue),
+      referenceDate: normalizeReferenceDate(record.referenceDate)
+    }))
+    .filter((record) => Boolean(record.assetName));
 }
 
 function groupBreakdown(records: PortfolioRecord[], field: "assetClass" | "broker" | "clientName"): BreakdownItem[] {
@@ -95,23 +135,23 @@ function buildInsights(latestRecords: PortfolioRecord[], timeline: { date: strin
 
   return [
     {
-      title: "Composição dominante",
+      title: "Composicao dominante",
       body: allocation
-        ? `A classe ${allocation.label.replace("_", " ")} concentra ${(allocation.share * 100).toFixed(1)}% do patrimônio analisado.`
-        : "A composição ainda não oferece sinal relevante de concentração."
+        ? `A classe ${allocation.label.replace("_", " ")} concentra ${(allocation.share * 100).toFixed(1)}% do patrimonio analisado.`
+        : "A composicao ainda nao oferece sinal relevante de concentracao."
     },
     {
-      title: "Dependência de plataforma",
+      title: "Dependencia de plataforma",
       body: broker
-        ? `${broker.label} responde pela maior fatia da custódia consolidada neste recorte.`
-        : "Ainda não há concentração material por corretora."
+        ? `${broker.label} responde pela maior fatia da custodia consolidada neste recorte.`
+        : "Ainda nao ha concentracao material por corretora."
     },
     {
-      title: "Trajetória recente",
+      title: "Trajetoria recente",
       body:
         lastTwo.length === 2
-          ? `A carteira variou ${trend >= 0 ? "+" : ""}${trend.toFixed(1)}% entre os dois últimos snapshots.`
-          : "O histórico ainda tem poucos pontos para leitura de tendência."
+          ? `A carteira variou ${trend >= 0 ? "+" : ""}${trend.toFixed(1)}% entre os dois ultimos snapshots.`
+          : "O historico ainda tem poucos pontos para leitura de tendencia."
     }
   ];
 }
@@ -120,18 +160,19 @@ export function buildReport(
   records: PortfolioRecord[],
   options: { clientName?: string; diagnosis?: string; sourceLabel: string }
 ): PortfolioReport {
-  const sortedDates = [...new Set(records.map((record) => record.referenceDate))].sort();
+  const sanitizedRecords = sanitizePortfolioRecords(records);
+  const sortedDates = [...new Set(sanitizedRecords.map((record) => record.referenceDate))].sort();
   const latestReferenceDate = sortedDates[sortedDates.length - 1] ?? new Date().toISOString().slice(0, 10);
-  const latestRecords = records.filter((record) => record.referenceDate === latestReferenceDate);
+  const latestRecords = sanitizedRecords.filter((record) => record.referenceDate === latestReferenceDate);
   const totalAum = latestRecords.reduce((sum, record) => sum + record.totalValue, 0);
   const timeline = sortedDates.map((date) => ({
     date,
-    value: records.filter((record) => record.referenceDate === date).reduce((sum, record) => sum + record.totalValue, 0)
+    value: sanitizedRecords.filter((record) => record.referenceDate === date).reduce((sum, record) => sum + record.totalValue, 0)
   }));
-  const clientLabel = options.clientName?.trim() || latestRecords[0]?.clientName || "Cliente em análise";
+  const clientLabel = options.clientName?.trim() || latestRecords[0]?.clientName || "Cliente em analise";
   const diagnosis =
     options.diagnosis?.trim() ||
-    "A carteira apresenta diversificação relevante entre classes, com leitura executiva voltada para concentração, liquidez e posicionamento tático.";
+    "A carteira apresenta diversificacao relevante entre classes, com leitura executiva voltada para concentracao, liquidez e posicionamento tatico.";
 
   return {
     clientName: clientLabel,
@@ -140,10 +181,10 @@ export function buildReport(
     generatedAt: new Date().toISOString(),
     latestReferenceDate,
     metrics: [
-      { label: "Patrimônio Consolidado", value: totalAum, tone: "blue", format: "currency" },
+      { label: "Patrimonio Consolidado", value: totalAum, tone: "blue", format: "currency" },
       { label: "Base de Clientes", value: new Set(latestRecords.map((record) => record.clientName)).size, tone: "teal", format: "number" },
       { label: "Rede de Corretoras", value: new Set(latestRecords.map((record) => record.broker)).size, tone: "gold", format: "number" },
-      { label: "Posições Monitoradas", value: latestRecords.length, tone: "slate", format: "number" }
+      { label: "Posicoes Monitoradas", value: latestRecords.length, tone: "slate", format: "number" }
     ],
     allocation: groupBreakdown(latestRecords, "assetClass"),
     brokerExposure: groupBreakdown(latestRecords, "broker"),
@@ -166,25 +207,25 @@ function toRecord(row: Record<string, unknown>): PortfolioRecord {
   const referenceDateColumn = resolveColumn(columns, "referenceDate");
   const riskColumn = resolveColumn(columns, "riskProfile");
 
-  const assetName = String(row[assetColumn ?? ""] ?? "Ativo");
-  const ticker = String(row[tickerColumn ?? ""] ?? "").trim();
-  const broker = String(row[brokerColumn ?? ""] ?? "XP");
-  const clientName = String(row[clientColumn ?? ""] ?? "Cliente em análise");
+  const assetName = sanitizeText(row[assetColumn ?? ""], "Ativo");
+  const ticker = sanitizeText(row[tickerColumn ?? ""], "");
+  const broker = sanitizeText(row[brokerColumn ?? ""], "XP");
+  const clientName = sanitizeText(row[clientColumn ?? ""], "Cliente em analise");
   const quantity = parseNumber(row[quantityColumn ?? ""]);
   const avgPrice = parseNumber(row[avgPriceColumn ?? ""]);
   const totalValue = parseNumber(row[totalValueColumn ?? ""]) || quantity * avgPrice;
 
   return {
     clientName,
-    riskProfile: String(row[riskColumn ?? ""] ?? "moderado"),
+    riskProfile: sanitizeText(row[riskColumn ?? ""], "moderado"),
     broker,
     assetClass: classifyAsset(assetName, ticker),
     ticker,
     assetName,
-    quantity,
-    avgPrice,
-    totalValue,
-    referenceDate: parseDate(row[referenceDateColumn ?? ""])
+    quantity: ensureFiniteNumber(quantity),
+    avgPrice: ensureFiniteNumber(avgPrice),
+    totalValue: ensureFiniteNumber(totalValue),
+    referenceDate: normalizeReferenceDate(row[referenceDateColumn ?? ""])
   };
 }
 
@@ -194,10 +235,10 @@ export async function parseSpreadsheet(file: File) {
   const workbook = XLSX.read(buffer, { type: "array" });
   const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
   const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(firstSheet, { defval: "" });
-  const records = rows.map(toRecord).filter((record) => record.assetName && record.totalValue > 0);
+  const records = sanitizePortfolioRecords(rows.map(toRecord)).filter((record) => record.assetName && record.totalValue > 0);
 
   if (!records.length) {
-    throw new Error("A planilha não possui colunas reconhecíveis para montar a prévia do relatório.");
+    throw new Error("A planilha nao possui colunas reconheciveis para montar a previa do relatorio.");
   }
 
   return records;
@@ -213,25 +254,27 @@ export function joinSnapshot(clients: ClientApi[], accounts: AccountApi[], asset
   const accountMap = new Map(accounts.map((account) => [account.id, account]));
   const assetMap = new Map(assets.map((asset) => [asset.id, asset]));
 
-  return positions
-    .map((position) => {
-      const account = accountMap.get(position.account_id);
-      const client = account ? clientMap.get(account.client_id) : undefined;
-      const asset = assetMap.get(position.asset_id);
-      if (!account || !asset) return null;
+  return sanitizePortfolioRecords(
+    positions
+      .map((position) => {
+        const account = accountMap.get(position.account_id);
+        const client = account ? clientMap.get(account.client_id) : undefined;
+        const asset = assetMap.get(position.asset_id);
+        if (!account || !asset) return null;
 
-      return {
-        clientName: client?.name ?? "Cliente consolidado",
-        riskProfile: client?.risk_profile ?? "moderado",
-        broker: account.broker,
-        assetClass: asset.asset_class,
-        ticker: asset.ticker ?? "",
-        assetName: asset.normalized_name,
-        quantity: Number(position.quantity),
-        avgPrice: Number(position.avg_price),
-        totalValue: Number(position.total_value),
-        referenceDate: position.reference_date
-      } satisfies PortfolioRecord;
-    })
-    .filter((record): record is PortfolioRecord => record !== null);
+        return {
+          clientName: sanitizeText(client?.name, "Cliente consolidado"),
+          riskProfile: sanitizeText(client?.risk_profile, "moderado"),
+          broker: sanitizeText(account.broker, "UNKNOWN"),
+          assetClass: sanitizeText(asset.asset_class, "others"),
+          ticker: sanitizeText(asset.ticker, ""),
+          assetName: sanitizeText(asset.normalized_name, sanitizeText(asset.original_name, "Ativo")),
+          quantity: ensureFiniteNumber(Number(position.quantity)),
+          avgPrice: ensureFiniteNumber(Number(position.avg_price)),
+          totalValue: ensureFiniteNumber(Number(position.total_value)),
+          referenceDate: normalizeReferenceDate(position.reference_date)
+        } satisfies PortfolioRecord;
+      })
+      .filter((record): record is PortfolioRecord => record !== null)
+  );
 }

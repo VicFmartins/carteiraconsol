@@ -3,6 +3,7 @@ import type { IngestionReport, ReviewQueueFilter, ReviewStatus } from "../types/
 
 type ReviewQueueWorkspaceProps = {
   reports: IngestionReport[];
+  hiddenTechnicalReportsCount: number;
   selectedReport: IngestionReport | null;
   loading: boolean;
   actionLoading: boolean;
@@ -86,6 +87,7 @@ function mappingScore(mapping: Record<string, unknown>) {
 
 export default function ReviewQueueWorkspace({
   reports,
+  hiddenTechnicalReportsCount,
   selectedReport,
   loading,
   actionLoading,
@@ -165,6 +167,14 @@ export default function ReviewQueueWorkspace({
               );
             })}
           </div>
+
+          {!loading && !error && hiddenTechnicalReportsCount > 0 && activeFilter !== "recent" ? (
+            <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 text-sm leading-7 text-slate-600">
+              {hiddenTechnicalReportsCount} historical technical failure
+              {hiddenTechnicalReportsCount > 1 ? "s are" : " is"} hidden from this operational queue. Use the
+              Recent filter if you need to audit legacy failures.
+            </div>
+          ) : null}
 
           {loading ? <div className="mt-6 text-sm text-slate-500">Carregando fila de revisao...</div> : null}
           {error ? <div className="mt-6 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-4 text-sm text-rose-700">{error}</div> : null}

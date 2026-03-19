@@ -1,5 +1,5 @@
 import type { PortfolioSnapshotApi } from "./api";
-import { joinSnapshot } from "./reportBuilder";
+import { joinSnapshot, sanitizePortfolioRecords } from "./reportBuilder";
 import type { BreakdownItem, DashboardData, DashboardFilters, MetricCard, PortfolioRecord, TimelinePoint } from "../types/report";
 
 function uniqueSorted(values: string[]) {
@@ -82,7 +82,7 @@ function buildMetrics(records: PortfolioRecord[]): MetricCard[] {
 }
 
 export function buildDashboardData(snapshot: PortfolioSnapshotApi, filters: DashboardFilters): DashboardData {
-  const records = joinSnapshot(snapshot.clients, snapshot.accounts, snapshot.assets, snapshot.positions);
+  const records = sanitizePortfolioRecords(joinSnapshot(snapshot.clients, snapshot.accounts, snapshot.assets, snapshot.positions));
   const availableClients = uniqueSorted(records.map((record) => record.clientName));
   const availableAssetClasses = uniqueSorted(records.map((record) => record.assetClass));
 

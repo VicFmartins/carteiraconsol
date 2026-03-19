@@ -238,6 +238,8 @@ def test_portfolio_pdf_report_endpoint_returns_a_pdf(api_client: TestClient) -> 
     assert response.status_code == 200
     assert response.headers["content-type"].startswith("application/pdf")
     assert "attachment;" in response.headers["content-disposition"]
+    assert response.headers["cache-control"] == "no-store"
+    assert response.headers["x-content-type-options"] == "nosniff"
     assert response.content.startswith(b"%PDF")
 
 

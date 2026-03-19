@@ -112,7 +112,11 @@ class PortfolioReportService:
         total_accounts = len({(row.client_name, row.broker) for row in current_rows})
         pending_reviews = int(
             self.db.scalar(
-                select(func.count()).select_from(IngestionReport).where(IngestionReport.review_required.is_(True))
+                select(func.count()).select_from(IngestionReport).where(
+                    IngestionReport.review_required.is_(True),
+                    IngestionReport.review_status == "pending",
+                    IngestionReport.status == "review_required",
+                )
             )
             or 0
         )

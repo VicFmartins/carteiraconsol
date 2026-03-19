@@ -169,6 +169,15 @@ function UploadStatusCard({
     );
   }
 
+  if (uploadState === "success" && lastError) {
+    return (
+      <div className="mt-6 rounded-[22px] border border-amber-300/18 bg-amber-300/[0.08] px-4 py-4 text-sm text-amber-100">
+        <div className="font-semibold">Upload concluido com observacao</div>
+        <div className="mt-2 leading-7 text-amber-100/85">{lastError}</div>
+      </div>
+    );
+  }
+
   return null;
 }
 
