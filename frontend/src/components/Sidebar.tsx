@@ -177,12 +177,31 @@ function ProcessingSummaryCard({ uploadSummary }: { uploadSummary: UploadSummary
     return null;
   }
 
+  const tone =
+    uploadSummary.outcome === "error"
+      ? {
+          wrapper: "border-rose-400/14 bg-rose-400/[0.08] text-rose-100",
+          badge: "bg-rose-400/14 text-rose-100",
+          label: "Error"
+        }
+      : uploadSummary.outcome === "review_required"
+        ? {
+            wrapper: "border-amber-300/18 bg-amber-300/[0.08] text-amber-100",
+            badge: "bg-amber-300/16 text-amber-100",
+            label: "Needs review"
+          }
+        : {
+            wrapper: "border-emerald-400/14 bg-emerald-400/[0.08] text-emerald-50",
+            badge: "bg-emerald-400/14 text-emerald-100",
+            label: "Success"
+          };
+
   return (
-    <div className="mt-6 rounded-[22px] border border-emerald-400/14 bg-emerald-400/[0.08] px-4 py-4 text-sm text-emerald-50">
+    <div className={`mt-6 rounded-[22px] border px-4 py-4 text-sm ${tone.wrapper}`}>
       <div className="flex items-center justify-between gap-3">
-        <div className="font-semibold">Last processing result</div>
-        <div className="rounded-full bg-emerald-400/14 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-emerald-100">
-          Latest
+        <div className="font-semibold">{uploadSummary.outcome === "error" ? "Last upload attempt" : "Last processing result"}</div>
+        <div className={`rounded-full px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] ${tone.badge}`}>
+          {tone.label}
         </div>
       </div>
 
@@ -211,9 +230,9 @@ function ProcessingSummaryCard({ uploadSummary }: { uploadSummary: UploadSummary
         </div>
       ) : null}
 
-      <div className="mt-3 text-[11px] uppercase tracking-[0.18em] text-emerald-100/60">Processado em</div>
+      <div className="mt-3 text-[11px] uppercase tracking-[0.18em] text-current/60">Processado em</div>
       <div className="mt-1 font-medium">{formatDateTime(uploadSummary.processedAt)}</div>
-      <div className="mt-3 leading-7 text-emerald-50/85">{uploadSummary.message}</div>
+      <div className="mt-3 leading-7 text-current/85">{uploadSummary.message}</div>
     </div>
   );
 }
@@ -246,7 +265,11 @@ function UploadHistoryCard({ uploadHistory }: { uploadHistory: UploadHistoryItem
                 ) : null}
                 <span
                   className={`rounded-full px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.16em] ${
-                    item.status === "success" ? "bg-emerald-400/12 text-emerald-100" : "bg-rose-400/12 text-rose-100"
+                    item.status === "success"
+                      ? "bg-emerald-400/12 text-emerald-100"
+                      : item.status === "review_required"
+                        ? "bg-amber-300/16 text-amber-100"
+                        : "bg-rose-400/12 text-rose-100"
                   }`}
                 >
                   {item.status}

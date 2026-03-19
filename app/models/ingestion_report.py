@@ -16,7 +16,7 @@ class IngestionReport(Base):
     source_file: Mapped[str] = mapped_column(String(512), nullable=False)
     source_type: Mapped[str] = mapped_column(String(50), nullable=False, index=True)
     detected_type: Mapped[str] = mapped_column(String(50), nullable=False, index=True)
-    layout_signature: Mapped[str | None] = mapped_column(String(500), nullable=True, index=True)
+    layout_signature: Mapped[str | None] = mapped_column(Text, nullable=True, index=True)
     raw_file: Mapped[str | None] = mapped_column(String(512), nullable=True)
     processed_file: Mapped[str | None] = mapped_column(String(512), nullable=True)
     parser_name: Mapped[str | None] = mapped_column(String(100), nullable=True, index=True)

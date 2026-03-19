@@ -31,7 +31,7 @@ def upgrade() -> None:
             """
             UPDATE ingestion_reports
             SET review_status = CASE
-                WHEN review_required = 1 THEN 'pending'
+                WHEN review_required IS TRUE THEN 'pending'
                 ELSE 'not_required'
             END
             """

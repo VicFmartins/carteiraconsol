@@ -77,6 +77,7 @@ export type ApiStatus = {
 };
 
 export type UploadSummary = {
+  outcome?: "success" | "review_required" | "error";
   ingestionReportId?: number;
   filename: string;
   detectedType: string;
@@ -98,7 +99,7 @@ export type UploadLifecycleState = "idle" | "uploading" | "processing" | "succes
 
 export type UploadHistoryItem = UploadSummary & {
   id: string;
-  status: "success" | "error";
+  status: "success" | "review_required" | "error";
   timestamp: string;
 };
 

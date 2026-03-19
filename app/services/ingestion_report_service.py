@@ -7,7 +7,7 @@ from pathlib import Path
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from app.core.exceptions import ResourceNotFoundError
+from app.core.exceptions import ETLInputError, ResourceNotFoundError
 from app.etl.contracts import ETLFileSummary
 from app.etl.detect.column_mapper import build_layout_signature
 from app.models.ingestion_report import IngestionReport
@@ -235,6 +235,11 @@ class IngestionReportService:
     ) -> IngestionReport:
         report = self.get_report(report_id)
         normalized_status = review_status.strip().lower()
+        if report.status == "error" and normalized_status == "approved":
+            raise ETLInputError(
+                "Technical ingestion failures cannot be approved. Fix the source file and upload it again, or "
+                "reprocess only successful review-required runs."
+            )
         report.review_status = normalized_status
         report.review_required = normalized_status == "pending"
         if normalized_status == "approved":

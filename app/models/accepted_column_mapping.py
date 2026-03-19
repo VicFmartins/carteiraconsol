@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
-from sqlalchemy import DateTime, Float, String, UniqueConstraint
+from sqlalchemy import DateTime, Float, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
@@ -21,7 +21,7 @@ class AcceptedColumnMapping(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True, index=True)
     institution_name: Mapped[str | None] = mapped_column(String(255), nullable=True, index=True)
-    layout_signature: Mapped[str] = mapped_column(String(500), nullable=False, index=True)
+    layout_signature: Mapped[str] = mapped_column(Text, nullable=False, index=True)
     source_column: Mapped[str] = mapped_column(String(255), nullable=False)
     canonical_field: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
     confidence: Mapped[float | None] = mapped_column(Float, nullable=True)

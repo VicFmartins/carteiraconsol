@@ -186,7 +186,11 @@ export default function App() {
     setUploadHistory((current) => [item, ...current].slice(0, MAX_UPLOAD_HISTORY_ITEMS));
   }
 
-  function buildHistoryItem(summary: UploadSummary, status: "success" | "error", messageOverride?: string): UploadHistoryItem {
+  function buildHistoryItem(
+    summary: UploadSummary,
+    status: "success" | "review_required" | "error",
+    messageOverride?: string
+  ): UploadHistoryItem {
     return {
       ...summary,
       id: `${summary.filename}-${summary.processedAt}-${status}`,
@@ -337,6 +341,7 @@ export default function App() {
       const uploadResult = await uploadPortfolioFile(file);
       setUploadName(uploadResult.filename);
       latestSummary = {
+        outcome: uploadResult.review_required ? "review_required" : "success",
         ingestionReportId: uploadResult.ingestion_report_id,
         filename: uploadResult.filename,
         detectedType: uploadResult.detected_type,
@@ -354,7 +359,7 @@ export default function App() {
         reprocessCount: uploadResult.reprocess_count ?? 0
       };
       setUploadSummary(latestSummary);
-      appendUploadHistory(buildHistoryItem(latestSummary, "success"));
+      appendUploadHistory(buildHistoryItem(latestSummary, latestSummary.outcome ?? "success"));
 
       setUploadState("processing");
       const nextRecords = await refreshSnapshotAfterUpload();
@@ -373,6 +378,7 @@ export default function App() {
 
       if (!latestSummary) {
         const fallbackSummary: UploadSummary = {
+          outcome: "error",
           filename: file.name,
           detectedType: detectFileTypeFromName(file.name),
           rowsProcessed: 0,

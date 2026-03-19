@@ -522,6 +522,43 @@ def test_reprocess_endpoint_rejects_pending_report(api_client: TestClient) -> No
     assert payload["error_code"] == "etl_input_error"
 
 
+def test_error_report_cannot_be_approved(api_client: TestClient) -> None:
+    session = api_client.app.state.testing_session_factory()
+    try:
+        report = IngestionReport(
+            filename="falha.xlsx",
+            source_file="/tmp/falha.xlsx",
+            source_type="local",
+            detected_type="excel",
+            review_required=True,
+            review_status="pending",
+            review_reasons=["processing_failed"],
+            detected_columns=[],
+            applied_mappings=[],
+            structure_detection={},
+            rows_processed=0,
+            rows_skipped=0,
+            status="error",
+            message="Falha tecnica",
+        )
+        session.add(report)
+        session.commit()
+        session.refresh(report)
+        report_id = report.id
+    finally:
+        session.close()
+
+    response = api_client.patch(
+        f"/ingestion-reports/{report_id}/review",
+        json={"review_status": "approved"},
+    )
+
+    assert response.status_code == 422
+    payload = response.json()
+    assert payload["status"] == "error"
+    assert payload["error_code"] == "etl_input_error"
+
+
 def test_approved_report_can_be_reprocessed_in_place(api_client: TestClient) -> None:
     csv_content = "\n".join(
         [

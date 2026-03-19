@@ -170,6 +170,10 @@ class ETLService:
 
     def reprocess_report(self, report_id: int) -> UploadResponse:
         report = self.ingestion_reports.get_report(report_id)
+        if report.status == "error":
+            raise ETLInputError(
+                "Technical ingestion failures cannot be reprocessed in place. Upload a corrected file to create a new run."
+            )
         if report.review_status not in {"approved", "not_required"}:
             raise ETLInputError("Only approved or not-required ingestion reports can be reprocessed.")
 

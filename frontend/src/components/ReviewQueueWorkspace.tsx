@@ -50,6 +50,12 @@ function reviewStatusLabel(status: ReviewStatus) {
   return status;
 }
 
+function reportStatusLabel(status: string) {
+  if (status === "review_required") return "needs review";
+  if (status === "error") return "technical error";
+  return status;
+}
+
 function filterLabel(filter: ReviewQueueFilter) {
   if (filter === "pending") return "Pendentes";
   if (filter === "review_required") return "Needs review";
@@ -93,6 +99,7 @@ export default function ReviewQueueWorkspace({
   onApproveAndReprocess
 }: ReviewQueueWorkspaceProps) {
   const filters: ReviewQueueFilter[] = ["pending", "review_required", "recent"];
+  const selectedReportIsTechnicalError = selectedReport?.status === "error";
 
   return (
     <section className="rounded-[32px] border border-slate-200 bg-[#f8fafc] p-6 shadow-[0_24px_70px_rgba(15,23,42,0.18)] md:p-8 lg:p-10">
@@ -187,11 +194,11 @@ export default function ReviewQueueWorkspace({
                       <div className="truncate text-sm font-semibold text-slate-950">{report.filename}</div>
                       <div className="mt-1 text-xs text-slate-500">{formatDateTime(report.processedAt ?? report.createdAt)}</div>
                     </div>
-                    <StatusBadge label={report.reviewStatus} tone={statusTone(report.reviewStatus)} />
+                    <StatusBadge label={reviewStatusLabel(report.reviewStatus)} tone={statusTone(report.reviewStatus)} />
                   </div>
 
                   <div className="mt-3 flex flex-wrap gap-2">
-                    <StatusBadge label={report.status} tone={statusTone(report.status)} />
+                    <StatusBadge label={reportStatusLabel(report.status)} tone={statusTone(report.status)} />
                     <StatusBadge label={report.detectedType} tone="blue" />
                   </div>
 
@@ -222,11 +229,18 @@ export default function ReviewQueueWorkspace({
                 </div>
 
                 <div className="flex flex-wrap gap-2">
-                  <StatusBadge label={selectedReport.status} tone={statusTone(selectedReport.status)} />
-                  <StatusBadge label={selectedReport.reviewStatus} tone={statusTone(selectedReport.reviewStatus)} />
+                  <StatusBadge label={reportStatusLabel(selectedReport.status)} tone={statusTone(selectedReport.status)} />
+                  <StatusBadge label={reviewStatusLabel(selectedReport.reviewStatus)} tone={statusTone(selectedReport.reviewStatus)} />
                   {selectedReport.reviewRequired ? <StatusBadge label="needs review" tone="amber" /> : null}
                 </div>
               </div>
+
+              {selectedReportIsTechnicalError ? (
+                <div className="mt-6 rounded-[24px] border border-rose-200 bg-rose-50 px-5 py-4 text-sm leading-7 text-rose-700">
+                  Este item representa uma falha tecnica historica de ingestao. Ele permanece visivel para auditoria, mas
+                  nao deve ser tratado como um caso normal de aprovacao por mapping.
+                </div>
+              ) : null}
 
               <div className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
                 <div className="rounded-2xl border border-slate-100 bg-slate-50 px-4 py-4">
@@ -275,7 +289,7 @@ export default function ReviewQueueWorkspace({
                       key={status}
                       type="button"
                       onClick={() => onReviewAction(status)}
-                      disabled={actionLoading}
+                      disabled={actionLoading || (selectedReportIsTechnicalError && status === "approved")}
                       className={`rounded-full px-4 py-2 text-xs font-semibold uppercase tracking-[0.16em] transition ${
                         selectedReport.reviewStatus === status
                           ? "bg-slate-900 text-white"
@@ -285,7 +299,8 @@ export default function ReviewQueueWorkspace({
                       {reviewStatusLabel(status)}
                     </button>
                   ))}
-                  {selectedReport.reviewStatus === "pending" || selectedReport.reviewStatus === "approved" ? (
+                  {!selectedReportIsTechnicalError &&
+                  (selectedReport.reviewStatus === "pending" || selectedReport.reviewStatus === "approved") ? (
                     <button
                       type="button"
                       onClick={onApproveAndReprocess}
