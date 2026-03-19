@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends
 
 from app.api.dependencies import get_current_user
-from app.api.routes import accounts, assets, clients, etl, health, ingestion_reports, positions, upload
+from app.api.routes import accounts, assets, clients, etl, health, ingestion_reports, positions, reports, upload
 from app.api.routes import auth
 
 
@@ -17,3 +17,4 @@ api_router.include_router(accounts.router, prefix="/accounts", tags=["accounts"]
 api_router.include_router(assets.router, prefix="/assets", tags=["assets"], dependencies=protected_dependencies)
 api_router.include_router(positions.router, prefix="/positions", tags=["positions"], dependencies=protected_dependencies)
 api_router.include_router(etl.router, prefix="/etl", tags=["etl"], dependencies=protected_dependencies)
+api_router.include_router(reports.router, tags=["reports"], dependencies=protected_dependencies)

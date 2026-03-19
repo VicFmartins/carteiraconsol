@@ -572,3 +572,43 @@ export async function fetchPortfolioSnapshot(): Promise<PortfolioSnapshotApi> {
 
   return { clients, accounts, assets, positions };
 }
+
+function resolveDownloadFilename(response: Response, fallback: string) {
+  const disposition = response.headers.get("content-disposition");
+  const match = disposition?.match(/filename="?([^"]+)"?/i);
+  return match?.[1] || fallback;
+}
+
+export async function downloadPortfolioPdfReport(filters?: {
+  clientName?: string;
+  assetClass?: string;
+  referenceDate?: string;
+}) {
+  let response: Response;
+  try {
+    response = await apiFetch(
+      buildPath("/reports/portfolio/pdf", {
+        client_name: filters?.clientName || undefined,
+        asset_class: filters?.assetClass || undefined,
+        reference_date: filters?.referenceDate || undefined
+      })
+    );
+  } catch {
+    throw new Error("Nao foi possivel conectar ao backend para gerar o PDF executivo.");
+  }
+
+  if (!response.ok) {
+    await throwApiError(response, "Nao foi possivel gerar o PDF executivo do portfolio.");
+  }
+
+  const blob = await response.blob();
+  const filename = resolveDownloadFilename(response, "carteiraconsol_executive_portfolio_report.pdf");
+  const url = window.URL.createObjectURL(blob);
+  const anchor = window.document.createElement("a");
+  anchor.href = url;
+  anchor.download = filename;
+  window.document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  window.URL.revokeObjectURL(url);
+}

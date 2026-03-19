@@ -426,6 +426,7 @@ GET /positions
 GET /ingestion-reports
 GET /ingestion-reports/{id}
 PATCH /ingestion-reports/{id}/review
+GET /reports/portfolio/pdf
 ```
 
 ### Filtros e Paginação
@@ -483,6 +484,54 @@ curl.exe -X POST "http://127.0.0.1:8000/upload" -F "file=@C:\Users\vitor\OneDriv
   }
 }
 ```
+
+## 📄 Relatório PDF Executivo
+
+O backend agora gera um PDF executivo real a partir dos dados consolidados já persistidos na plataforma.
+
+Escolha técnica desta primeira versão:
+
+- geração server-side com `reportlab`
+
+Motivo:
+
+- mantém a implantação em ECS e ambientes locais mais simples do que depender de runtimes gráficos nativos
+- produz um PDF real no backend, sem depender de export do navegador
+- atende bem a primeira versão de um relatório premium com layout, métricas, tabelas e hierarquia visual
+
+Endpoint:
+
+```http
+GET /reports/portfolio/pdf
+```
+
+Filtros opcionais:
+
+- `client_name`
+- `asset_class`
+- `reference_date`
+
+Exemplo:
+
+```powershell
+curl.exe -L "http://127.0.0.1:8000/reports/portfolio/pdf?reference_date=2026-03-17" ^
+  -H "Authorization: Bearer SEU_TOKEN" ^
+  --output carteira_executive_report.pdf
+```
+
+Conteúdo da versão atual:
+
+- header executivo
+- data de geração
+- valor total consolidado
+- total de clientes
+- total de ativos
+- total de contas
+- alocação por classe de ativo
+- top ativos por valor
+- evolução por data de referência
+- tabela das principais posições
+- nota operacional quando existirem ingestões pendentes de revisão
 
 ## 🔄 ETL: Visão de Alto Nível
 

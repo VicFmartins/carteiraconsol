@@ -10,8 +10,11 @@ type DashboardWorkspaceProps = {
   data: DashboardData | null;
   filters: DashboardFilters;
   loading: boolean;
+  pdfLoading: boolean;
   error: string | null;
+  actionError: string | null;
   onRefresh: () => void;
+  onDownloadPdf: () => void;
   onResetFilters: () => void;
   onFilterChange: (field: keyof DashboardFilters, value: string) => void;
 };
@@ -117,8 +120,11 @@ export default function DashboardWorkspace({
   data,
   filters,
   loading,
+  pdfLoading,
   error,
+  actionError,
   onRefresh,
+  onDownloadPdf,
   onResetFilters,
   onFilterChange
 }: DashboardWorkspaceProps) {
@@ -169,17 +175,37 @@ export default function DashboardWorkspace({
               <p className="text-xs uppercase tracking-[0.22em] text-slate-400">As of date</p>
               <p className="mt-2 text-sm font-semibold text-white">{data.asOfDate ? formatDate(data.asOfDate) : "-"}</p>
             </div>
-            <button
-              type="button"
-              onClick={onRefresh}
-              className="rounded-2xl border border-cyan-300/18 bg-cyan-300/[0.08] px-4 py-4 text-left text-sm font-semibold text-cyan-50 transition hover:bg-cyan-300/[0.14]"
-            >
-              Refresh live data
-              <div className="mt-1 text-xs font-medium text-cyan-50/70">Atualiza o snapshot visivel no dashboard</div>
-            </button>
+            <div className="grid gap-3">
+              <button
+                type="button"
+                onClick={onRefresh}
+                className="rounded-2xl border border-cyan-300/18 bg-cyan-300/[0.08] px-4 py-4 text-left text-sm font-semibold text-cyan-50 transition hover:bg-cyan-300/[0.14]"
+              >
+                Refresh live data
+                <div className="mt-1 text-xs font-medium text-cyan-50/70">Atualiza o snapshot visivel no dashboard</div>
+              </button>
+              <button
+                type="button"
+                onClick={onDownloadPdf}
+                disabled={pdfLoading}
+                className="rounded-2xl border border-emerald-300/18 bg-emerald-300/[0.1] px-4 py-4 text-left text-sm font-semibold text-emerald-50 transition hover:bg-emerald-300/[0.14] disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {pdfLoading ? "Generating PDF..." : "Download executive PDF"}
+                <div className="mt-1 text-xs font-medium text-emerald-50/70">
+                  Gera um relatorio premium com o mesmo recorte executivo do painel.
+                </div>
+              </button>
+            </div>
           </div>
         </div>
       </header>
+
+      {actionError ? (
+        <div className="mt-6 rounded-[24px] border border-rose-200 bg-rose-50 px-5 py-4 text-sm text-rose-700 shadow-[0_12px_30px_rgba(190,24,93,0.06)]">
+          <div className="font-semibold">PDF generation needs attention</div>
+          <div className="mt-2 leading-7">{actionError}</div>
+        </div>
+      ) : null}
 
       <div className="mt-8 rounded-[28px] border border-slate-200 bg-white p-5 shadow-[0_18px_40px_rgba(15,23,42,0.06)]">
         <SectionHeader

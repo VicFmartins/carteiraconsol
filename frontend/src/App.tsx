@@ -8,6 +8,7 @@ import Sidebar from "./components/Sidebar";
 import { useAuth } from "./contexts/AuthContext";
 import { mockPortfolioRecords } from "./data/mockReport";
 import {
+  downloadPortfolioPdfReport,
   fetchPortfolioSnapshot,
   fetchIngestionReport,
   fetchIngestionReports,
@@ -96,7 +97,9 @@ export default function App() {
   const [reviewFeedback, setReviewFeedback] = useState<string | null>(null);
   const [dashboardSnapshot, setDashboardSnapshot] = useState<Awaited<ReturnType<typeof fetchPortfolioSnapshot>> | null>(null);
   const [dashboardLoading, setDashboardLoading] = useState(false);
+  const [dashboardPdfLoading, setDashboardPdfLoading] = useState(false);
   const [dashboardError, setDashboardError] = useState<string | null>(null);
+  const [dashboardActionError, setDashboardActionError] = useState<string | null>(null);
   const [dashboardFilters, setDashboardFilters] = useState<DashboardFilters>({
     clientName: "",
     assetClass: "",
@@ -239,6 +242,7 @@ export default function App() {
     try {
       const snapshot = await fetchPortfolioSnapshot();
       setDashboardSnapshot(snapshot);
+      setDashboardActionError(null);
     } catch (error) {
       if (!options?.silent) {
         setDashboardError(error instanceof Error ? error.message : "Nao foi possivel carregar o dashboard ao vivo.");
@@ -505,6 +509,22 @@ export default function App() {
     });
   }
 
+  async function handleDownloadDashboardPdf() {
+    setDashboardPdfLoading(true);
+    setDashboardActionError(null);
+    try {
+      await downloadPortfolioPdfReport({
+        clientName: dashboardFilters.clientName || undefined,
+        assetClass: dashboardFilters.assetClass || undefined,
+        referenceDate: dashboardFilters.referenceDate || undefined
+      });
+    } catch (error) {
+      setDashboardActionError(error instanceof Error ? error.message : "Nao foi possivel gerar o PDF executivo.");
+    } finally {
+      setDashboardPdfLoading(false);
+    }
+  }
+
   if (authLoading) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-[radial-gradient(circle_at_top,rgba(34,211,238,0.10),transparent_28%),linear-gradient(180deg,#07101f_0%,#081320_100%)] px-6 py-8 text-slate-200">
@@ -575,8 +595,11 @@ export default function App() {
               data={dashboardData}
               filters={dashboardFilters}
               loading={dashboardLoading}
+              pdfLoading={dashboardPdfLoading}
               error={dashboardError}
+              actionError={dashboardActionError}
               onRefresh={() => void loadDashboardSnapshot()}
+              onDownloadPdf={() => void handleDownloadDashboardPdf()}
               onResetFilters={handleDashboardResetFilters}
               onFilterChange={handleDashboardFilterChange}
             />

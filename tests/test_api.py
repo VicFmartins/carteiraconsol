@@ -232,6 +232,15 @@ def test_positions_endpoint_returns_validation_errors_in_standard_format(api_cli
     assert payload["errors"][0]["field"] == "limit"
 
 
+def test_portfolio_pdf_report_endpoint_returns_a_pdf(api_client: TestClient) -> None:
+    response = api_client.get("/reports/portfolio/pdf")
+
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("application/pdf")
+    assert "attachment;" in response.headers["content-disposition"]
+    assert response.content.startswith(b"%PDF")
+
+
 def test_upload_endpoint_processes_a_supported_file(api_client: TestClient) -> None:
     csv_content = "\n".join(
         [
